@@ -1,0 +1,338 @@
+document.addEventListener("DOMContentLoaded", async function() {
+    let currentUsername = '';
+    let currentUserIsAdmin = false;
+    
+    async function updateAuthUI() {
+	const res = await fetch('/whoami');
+	const data = await res.json();
+	const loginForm = document.getElementById('login-form');
+	const loginInfo = document.getElementById('login-info');
+	const logoutForm = document.getElementById('logout-form');
+
+	if (data.logged_in) {
+	    currentUsername = data.username;
+	    
+	    const resAdmin = await fetch(`/is_admin/${currentUsername}`);
+	    const dataAdmin = await resAdmin.json();
+            currentUserIsAdmin = await dataAdmin.is_admin;
+
+            loginForm.style.display = 'none';
+	    loginInfo.textContent = currentUsername;
+            logoutForm.style.display = 'inline-block';
+	} else {
+	    currentUsername = '';
+	    currentUserIsAdmin = false;
+            loginForm.style.display = 'block';
+            logoutForm.style.display = 'none';
+	}
+    }
+    
+    async function login(username, password) {
+	const res = await fetch('/login', {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({username, password})
+	});
+	if (res.ok) {
+            const data = await res.json();
+	    await updateAuthUI();
+            loadOccupancy(); // osveži tabelu nakon login-a
+	} else {
+            alert('Prijava na sistem nije uspela');
+	}
+    }
+    
+    await updateAuthUI();
+    
+    const loginForm = document.getElementById('login-form');
+    loginForm.addEventListener('submit', e => {
+        e.preventDefault();
+        const username = document.getElementById('username').value;
+        const password = document.getElementById('password').value;
+        login(username, password);
+    });
+
+    document.getElementById('logout').addEventListener('click', async () => {
+	const res = await fetch('/logout', {method:'POST'});
+	if (res.ok) {
+	    await updateAuthUI();
+            loadOccupancy(); // tabela se može osvežiti
+	}
+    });
+
+    async function deleteReservation(resId) {
+	const res = await fetch('/reservation/' + resId, { method: 'DELETE' });
+	if (res.ok) {
+            loadOccupancy(); // osveži tabelu
+	} else {
+            const data = await res.json();
+            alert('Greška: ' + (data.error || 'Nepoznato'));
+	}
+    }
+    
+    const dateInput = document.getElementById("date");
+    const loadBtn = document.getElementById("load");
+    const prevBtn = document.getElementById("prev");
+    const nextBtn = document.getElementById("next");
+    const occupancyDiv = document.getElementById("occupancy");
+
+    // Drag & drop selection
+    let isDragging = false;
+    let dragStart = null;
+    
+    const today = new Date().toISOString().split("T")[0];
+    dateInput.value = today;
+
+    async function loadOccupancy() {
+        const date = dateInput.value;
+        const res1 = await fetch(`/occupancy?date=${date}`);
+        if (!res1.ok) {
+            occupancyDiv.innerHTML = `<p style="color:red">Error loading occupancy</p>`;
+            return;
+        }
+        const data = await res1.json();
+
+        // Dobijamo sve učionice i slotove
+	const res2 = await fetch('/rooms');
+	const rooms = await res2.json();
+	
+        renderOccupancyTables(data, rooms);
+    }
+
+    function formatDateDDMMYYYY(isoDate) {
+	// isoDate = "YYYY-MM-DD"
+	const parts = isoDate.split("-");
+	const year = parts[0];
+	const month = parts[1];
+	const day = parts[2];
+	return `${day}/${month}/${year}`;
+    }
+
+
+    function getDayLabel(data) {
+	const weekDays = ['Ponedeljak', 'Utorak', 'Sreda', 'Četvrtak', 'Petak', 'Subota', 'Nedelja'];
+	return data.is_working ? weekDays[data.week_day] : "Neradni dan";
+    }
+
+    function renderHeader(date, dayLabel) {
+	const h2 = document.createElement('h2');
+	h2.textContent = `Zauzeće sala na dan ${formatDateDDMMYYYY(date)} (${dayLabel})`;
+	occupancyDiv.appendChild(h2);
+    }
+
+    function createTh(text) {
+	const th = document.createElement('th');
+	th.textContent = text;
+	return th;
+    }
+
+    function createTimeTh(hour) {
+	const th = document.createElement('th');
+	const inner = document.createElement('div');
+	inner.textContent = `${hour}:00-${hour+1}:00`;
+	inner.style.minHeight = '100px';
+	inner.style.lineHeight = '100px';
+	th.appendChild(inner);
+	return th;
+    }
+
+    function renderCancelReservationButton(resId, cell) {
+	const btn = document.createElement('button');
+	btn.style.margin='5px';
+	btn.textContent = '×';
+	btn.addEventListener('click', async () => {
+            await deleteReservation(resId);
+	});
+	cell.appendChild(btn);
+    }
+    
+    function createRoomTd(rid, hour, data, prevCells) {
+	const roomItems = data.rooms[rid] || [];
+	const cellData = roomItems.find(item => item.start <= hour && hour < item.end);
+	
+	const text = cellData ? (cellData.type === 'weekly'
+				 ? `${cellData.lecture_name} <br /> (${cellData.teacher})`
+				 : `(${cellData.username}): <br /> ${cellData.description}`) : '';
+
+
+	const td = document.createElement('td');
+	const prev = prevCells[rid];
+
+	if (prev && prev.text === text && text !== '') {
+            prev.td.rowSpan++;
+	    return null;
+	} else {
+            td.innerHTML = text;
+	    const typeClass = cellData ? (cellData.type === 'weekly' ? 'weekly' : 'reservation') : 'empty-slot';
+            td.classList.add(typeClass);
+	    
+            if (cellData?.type === 'reservation' &&
+		(cellData.username === currentUsername || currentUserIsAdmin))
+		renderCancelReservationButton(cellData.id, td);
+
+            if (typeClass === 'empty-slot') {
+		td.dataset.room_id = rid;
+		td.dataset.hour = hour;
+		const inner = document.createElement('div');
+		inner.style.minHeight = '100px';
+		td.appendChild(inner);
+            }
+
+	    td.rowspan = 1;
+            prevCells[rid] = { td, text };
+	    return td;
+	}
+    }
+
+    
+    function createTableHeader(roomIds, rooms) {
+	const thead = document.createElement('thead');
+	const headerRow = document.createElement('tr');
+	headerRow.appendChild(createTh('Vreme'));
+	roomIds.forEach(rid => headerRow.appendChild(createTh(rooms[rid].name)));
+	thead.appendChild(headerRow);
+	return thead;
+    }
+    
+    function createTable(roomIds, rooms, data) {
+	const startHour = 8, endHour = 21;
+	const table = document.createElement('table');
+	table.border = '1';
+	table.cellPadding = '5';
+	table.cellSpacing = '0';
+
+	table.appendChild(createTableHeader(roomIds, rooms));
+
+	const prevCells = {}; // za rowspan
+	const tbody = document.createElement('tbody');
+	for (let h = startHour; h < endHour; h++) {
+            const tr = document.createElement('tr');
+            tr.appendChild(createTimeTh(h));
+	    
+            roomIds.forEach(rid => {
+		const td = createRoomTd(rid, h, data, prevCells);
+		if (td)
+		    tr.appendChild(td);
+            });
+	    
+            tbody.appendChild(tr);
+	}
+	table.appendChild(tbody);
+	return table;
+    }
+    
+
+    function attachDragAndDropHandlers() {
+	let isDragging = false;
+	let dragStart = null;
+	let dragRoom = null;
+
+	const slots = occupancyDiv.querySelectorAll('.empty-slot');
+
+	slots.forEach(td => {
+            td.addEventListener('mousedown', e => {
+		isDragging = true;
+		dragStart = td;
+		dragRoom = td.dataset.room_id;
+		td.style.cursor = 'pointer';
+		td.classList.add('hover');
+            });
+
+            td.addEventListener('mouseenter', e => {
+		if (isDragging && td.dataset.room_id === dragRoom)
+                    td.classList.add('hover');
+            });
+
+            td.addEventListener('mouseleave', e => {
+		if (!isDragging) td.classList.remove('hover');
+            });
+
+            td.addEventListener('mouseup', async e => {
+		if (!isDragging) return;
+		isDragging = false;
+		td.style.cursor = 'default';
+		
+		const selected = Array.from(occupancyDiv.querySelectorAll('.empty-slot.hover'));
+		if (!selected.length) return;
+
+		const roomId = selected[0].dataset.room_id;
+		const hours = selected.map(c => parseInt(c.dataset.hour)).sort((a,b)=>a-b);
+		const start_slot = hours[0];
+		const end_slot = hours[hours.length-1]+1;
+
+		let description = prompt(`Unesite opis rezervacije za salu ${roomId}, ${start_slot}:00-${end_slot}:00`);
+		if (!description) { selected.forEach(c => c.classList.remove('hover')); return; }
+
+		let username = '';
+		if (currentUserIsAdmin) username = prompt('Unesite korisničko ime vlasnika rezervacije');
+
+		const date = dateInput.value;
+		const body = username
+                      ? JSON.stringify({date, room_id: roomId, start_slot, end_slot, description, username})
+                      : JSON.stringify({date, room_id: roomId, start_slot, end_slot, description});
+
+		try {
+                    const res = await fetch('/reserve', { method:'POST', headers:{'Content-Type':'application/json'}, body });
+                    if (res.ok) loadOccupancy();
+                    else {
+			const data = await res.json();
+			alert('Greška: ' + (data.error || 'Nepoznato'));
+                    }
+		} catch {
+                    alert('Greška pri povezivanju sa serverom');
+		}
+
+		selected.forEach(c => c.classList.remove('hover'));
+            });
+	    
+            td.addEventListener('mousedown', e => e.preventDefault());
+	});
+    }
+
+    function groupRoomsByLocation(rooms) {
+	const locations = {};
+	Object.entries(rooms).forEach(([rid, room]) => {
+            const loc = room.location || "Nepoznata lokacija";
+            if (!locations[loc]) locations[loc] = {};
+            locations[loc][rid] = room;
+	});
+	return locations;
+    }
+    
+    function renderOccupancyTables(data, rooms) {
+	occupancyDiv.innerHTML = ''; // očisti prethodni sadržaj
+
+	const dayLabel = getDayLabel(data);
+	renderHeader(data.date, dayLabel);
+	
+	const roomsByLocation = groupRoomsByLocation(rooms);
+
+	for (const [location, locationRooms] of Object.entries(roomsByLocation)) {
+            const h3 = document.createElement('h3');
+            h3.textContent = location;
+            occupancyDiv.appendChild(h3);
+
+            const table = createTable(Object.keys(locationRooms).sort((a,b)=>a-b), locationRooms, data);
+            occupancyDiv.appendChild(table);
+	}
+
+	if (currentUsername) {
+            attachDragAndDropHandlers(); // dodaj evente za sve tabele
+	}
+    }
+
+
+    // Funkcija za promenu datuma
+    function changeDate(days) {
+	const date = new Date(dateInput.value);
+	date.setDate(date.getDate() + days);
+	dateInput.value = date.toISOString().split("T")[0];
+	loadOccupancy();
+    }
+
+    prevBtn.addEventListener("click", () => changeDate(-1));
+    nextBtn.addEventListener("click", () => changeDate(1));
+
+    loadBtn.addEventListener("click", loadOccupancy);
+    loadOccupancy();
+});

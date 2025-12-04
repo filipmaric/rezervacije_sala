@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    #calendar {
+	display: grid;
+	grid-template-columns: repeat(7, 50px);
+	gap: 5px;
+	margin: 10px;
+    }
+
+    .day {
+	width: 50px;
+	height: 50px;
+	line-height: 50px;
+	text-align: center;
+	border: 1px solid #ccc;
+	cursor: pointer;
+	position: relative;
+    }
+
+    .working-day { background-color: #b3e6b3; }   /* zeleni */
+    .non-working-day { background-color: #e6e6e6; } /* sivi */
+    .weekend { border: 1px solid #999; } /* subota/nedelja */
+    .holiday { background-color: #f5b3b3; } /* praznici / izuzeci */
+  </style>
+  
+  <script src="{{ url_for('static', filename='calendar.js') }}"></script>
+</head>
+<body>
+<div>
+    <label for="month">Mesec: </label>
+    <select id="month"></select>
+    <label for="year">Godina: </label>
+    <select id="year"></select>
+    <button id="saveBtn">Sačuvaj promene</button>
+</div>
+<div id="calendar"></div>
+</body>
+</html>
