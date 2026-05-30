@@ -54,7 +54,7 @@ LOG_FILE = os.getenv("APP_LOG_FILE", os.path.join(BASE_DIR, "app.log"))
 app = Flask(__name__, static_url_path=STATIC_URL_PATH)
 app.config['APPLICATION_ROOT'] = APPLICATION_ROOT
 app.config['SERVICE_API_KEY'] = 'e3bebd1c69cebc8c4a3158bab74782b0e6439c2c3b9a166896f4ed0c5cc829e4' # TODO: move to environment or db
-app.secret_key = 'classroommatfreservations'  # obavezno za sesije
+app.secret_key = 'classroommatfreservations'  # required for sessions
 
 # Local development defaults to the mock authenticator.
 # Set AUTH_BACKEND=radius to use the real RADIUS server.
@@ -71,10 +71,10 @@ except OSError:
 
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = None  # nema redirecta
+login_manager.login_view = None  # no redirect
 login_manager.login_message = None
 
-# JSON response za neautorizovane zahteve
+# JSON response for unauthorized requests
 @login_manager.unauthorized_handler
 def unauthorized():
     return jsonify({'error':'Unauthorized'}), 401
@@ -116,7 +116,7 @@ def get_db():
     if db is None:
         db = g._database = sqlite3.connect(DATABASE, detect_types=sqlite3.PARSE_DECLTYPES)
         db.row_factory = sqlite3.Row
-        # omogućavanje WAL moda za konkurentni rad (Gunicorn)
+        # enable WAL mode for concurrent access (Gunicorn)
         db.execute('PRAGMA journal_mode=WAL;')
         # ensure foreign keys are enforced
         db.execute('PRAGMA foreign_keys = ON;')
@@ -150,11 +150,11 @@ def login_or_service_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
 
-        # ako je regularno ulogovan korisnik
+        # if the user is logged in normally
         if current_user.is_authenticated:
             return f(*args, **kwargs)
 
-        # ako nije, proveri Bearer token za service pristup
+        # otherwise, check the Bearer token for service access
         auth = request.headers.get("Authorization", "")
         if auth.startswith("Bearer "):
             token = auth.split(" ", 1)[1]
@@ -244,7 +244,7 @@ def whoami():
 
 
 def check_if_admin(username):
-    """Vraća True ako je korisnik administrator, False inače."""
+    """Return True if the user is an administrator, False otherwise."""
     try:
         result = query_db('SELECT 1 FROM administrators WHERE username = ?', (username,), one=True)
         return bool(result)
@@ -263,7 +263,7 @@ def list_rooms():
     query = 'SELECT id, name, capacity, type, location, priority FROM rooms'
     params = ()
 
-    # Ako je prosleđen type, filtriramo samo sobe tog tipa
+    # If type is provided, filter only rooms of that type
     room_type = request.args.get("type")
     if room_type:
         query += ' WHERE type = ?'
@@ -294,10 +294,10 @@ def check_day(date):
     ad = query_db('SELECT is_working, week_day FROM days WHERE date = ?', (date,), one=True)
     if ad:
         is_working = ad['is_working'] == 1
-        week_day = ad['week_day']        # preuzimamo iz baze
+        week_day = ad['week_day']        # taken from the database
     else:
         is_working = False
-        week_day = -1                     # default ako ne postoji u bazi
+        week_day = -1                     # default if no record exists in the database
 
     if week_day == -1:
         dow = iso_to_weekday(date)   # koristi standardnu funkciju
@@ -317,7 +317,7 @@ def occupancy():
     except ValueError:
         abort(400, 'invalid date format, expected YYYY-MM-DD')
 
-    # check day
+    # determine day
     (is_working, week_day, dow) = check_day(date)
     result = {}
 
@@ -361,8 +361,8 @@ def occupancy():
           t.username;
          '''
         for r in query_db(q, (date, dow, date)):
-            # Ako je čas otkazan i postoji bilo kakvo preklapanje sa rezervacijom
-            # u istom terminu, onda ga više ne prikazujemo u rasporedu.
+            # If the class is canceled and there is any overlap with a reservation
+            # in the same slot, we do not show it in the schedule.
             if bool(r['is_canceled']):
                 overlap = query_db(
                     '''
@@ -533,7 +533,7 @@ def bulk_reservations():
 @app.route('/reservation/<int:res_id>', methods=['DELETE'])
 @login_or_service_required
 def cancel_reservation(res_id):
-    # Provera da li rezervacija postoji i da li pripada trenutnom korisniku
+    # Check whether the reservation exists and belongs to the current user
     row = query_db('SELECT username FROM reservations WHERE id = ?', (res_id,), one=True)
     if not row:
         return jsonify({'error':'Reservation not found'}), 404
@@ -542,7 +542,7 @@ def cancel_reservation(res_id):
     if not is_service and row['username'] != current_user.username and not check_if_admin(current_user.username):
         return jsonify({'error':'Forbidden'}), 403
 
-    # Briše rezervaciju
+    # Delete the reservation
     execute_db('DELETE FROM reservations WHERE id = ?', (res_id,))
     return jsonify({'success': True})
 
@@ -553,8 +553,8 @@ def cancel_weekly_session_for_date():
     """
     Toggles cancellation of a single weekly session occurrence for a specific date.
 
-    If nema otkazivanja za dati (weekly_session_id, date) → upiše se otkazivanje.
-    Ako već postoji otkazivanje → briše se (čas se ponovo smatra zakazanim).
+    If there is no cancellation for the given (weekly_session_id, date), one is created.
+    If a cancellation already exists, it is removed and the class is considered scheduled again.
 
     Request JSON:
     {
@@ -565,7 +565,7 @@ def cancel_weekly_session_for_date():
     Response JSON:
     {
         "success": true,
-        "canceled": true/false   # true = sada je otkazan, false = vraćen
+        "canceled": true/false   # true = now canceled, false = restored
     }
     """
     data = request.get_json() or {}
@@ -611,7 +611,7 @@ def cancel_weekly_session_for_date():
 
     is_service = getattr(g, "service_auth", False)
 
-    # Dozvoljeno: nastavnik koji drži čas ili administrator (ili service nalog)
+    # Allowed: the teacher who teaches the class, an administrator, or a service account
     if not is_service and current_user.is_authenticated:
         if not (current_user.username == row['teacher_username'] or check_if_admin(current_user.username)):
             return jsonify({'error': 'Forbidden'}), 403
@@ -628,8 +628,8 @@ def cancel_weekly_session_for_date():
     )
 
     if existing:
-        # već je otkazano → pre nego što vratimo čas, proveri da li postoji
-        # bilo kakva rezervacija koja se preklapa sa tim terminom
+        # already canceled -> before restoring it, check whether any reservation
+        # overlaps with that slot
         res_conf = query_db(
             '''
             SELECT 1
@@ -643,7 +643,7 @@ def cancel_weekly_session_for_date():
         )
         if res_conf:
             return jsonify({
-                'error': 'Ne može se poništiti otkazivanje časa jer postoji rezervacija u ovom terminu.'
+                'error': 'Cannot restore the canceled class because a reservation exists in this slot.'
             }), 409
 
         execute_db(
@@ -652,7 +652,7 @@ def cancel_weekly_session_for_date():
         )
         return jsonify({'success': True, 'canceled': False})
 
-    # nema otkazivanja → upisujemo novo
+    # no cancellation exists -> create one
     execute_db(
         '''
         INSERT INTO weekly_cancellations (weekly_session_id, date, username)
@@ -672,14 +672,14 @@ def calendar_data():
     if month < 1 or month > 12:
         abort(400, 'month must be between 1 and 12')
 
-    # svi dani u mesecu
+    # all days in the month
     first_day = datetime.date(year, month, 1)
     last_day = datetime.date(year, month + 1, 1) - datetime.timedelta(days=1) if month < 12 else datetime.date(year, 12, 31)
     
     rows = query_db('SELECT date, is_working, week_day FROM days WHERE date BETWEEN ? AND ?',
                     (first_day.isoformat(), last_day.isoformat()))
 
-    # pretvori u dict
+    # convert to a dict
     calendar_dict = dict()
     for r in rows:
         calendar_dict[r['date']] = {
@@ -687,14 +687,14 @@ def calendar_data():
             'week_day': r['week_day']
         }
 
-    # opcionalno: dodaj praznike
+    # optional: add holidays
     holidays = ['2026-01-01', '2026-01-07']
 
     return jsonify({'calendar': calendar_dict, 'holidays': holidays})
 
 @app.route('/update_calendar', methods=['POST'])
 def update_calendar():
-    updates = request.get_json()  # lista objekata {date, is_working, week_day}
+    updates = request.get_json()  # list of objects {date, is_working, week_day}
 
     is_service = False
     if current_user.is_authenticated:
@@ -721,17 +721,17 @@ def update_calendar():
         except ValueError:
             return jsonify({'error': f'invalid date format for {date_str}, expected YYYY-MM-DD'}), 400
 
-        # Izračunaj realni dan u nedelji za ovaj datum (0=ponedeljak ... 6=nedelja)
+        # Calculate the real weekday for this date (0=Monday ... 6=Sunday)
         real_wd = iso_to_weekday(date_str)
 
-        # ako je week_day isti kao realni → koristi -1
+        # if week_day matches the real weekday, use -1
         if week_day == real_wd:
             week_day = -1
 
-        # Proveri da li zapis već postoji
+        # Check whether a record already exists
         existing = query_db('SELECT 1 FROM days WHERE date = ?', (date_str,), one=True)
 
-        # ako nije radni i nema postojeći zapis → skip
+        # if it's not a working day and no record exists, skip it
         if not is_working and not existing:
             continue
 

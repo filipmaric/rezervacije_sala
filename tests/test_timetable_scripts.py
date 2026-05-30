@@ -1,3 +1,4 @@
+import datetime as dt
 import csv
 import sqlite3
 import subprocess
@@ -7,9 +8,21 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYTHON = sys.executable
+DAY_TOKENS = {
+    0: "pon",
+    1: "uto",
+    2: "sre",
+    3: "cet",
+    4: "pet",
+    5: "sub",
+    6: "ned",
+}
 
 
-def init_timetable_db(db_path):
+def init_timetable_db(db_path, target_day=None):
+    if target_day is None:
+        target_day = dt.date(2026, 3, 10)
+
     conn = sqlite3.connect(db_path)
     with conn:
         with open(REPO_ROOT / "schema.sql", encoding="utf-8") as f:
@@ -35,6 +48,13 @@ def init_timetable_db(db_path):
             VALUES (?, ?, ?)
             """,
             ("Winter 2026", "2026-01-01", "2026-12-31"),
+        )
+        conn.execute(
+            """
+            INSERT INTO days (date, is_working, week_day)
+            VALUES (?, ?, ?)
+            """,
+            (target_day.isoformat(), 1, target_day.weekday()),
         )
     conn.close()
 
@@ -199,4 +219,134 @@ def test_update_timetable_changes_existing_session(tmp_path):
     assert row["day_of_week"] == 2
     assert row["start_slot"] == 12
     assert row["end_slot"] == 14
+    assert row["room_code"] == "407"
+
+
+def test_update_timetable_reports_conflicts_and_can_be_skipped(tmp_path):
+    db_path = tmp_path / "timetable.db"
+    teachers = tmp_path / "teachers.csv"
+    subjects = tmp_path / "subjects.csv"
+    timetable = tmp_path / "timetable.txt"
+    target_day = dt.date.today() + dt.timedelta(days=14)
+    token = DAY_TOKENS[target_day.weekday()]
+
+    init_timetable_db(db_path, target_day=target_day)
+    write_metadata(teachers, [("profuser", "Prof Full Name")])
+    write_metadata(subjects, [("MAT1.p", "Mathematics 1")])
+
+    run_script(
+        [
+            "scripts/import_timetable.py",
+            str(db_path),
+            "--teachers",
+            str(teachers),
+            "--subjects",
+            str(subjects),
+        ],
+        input_text=f"profuser_3A_MAT1.p_{token}_8_10_406\n",
+    )
+
+    conn = sqlite3.connect(db_path)
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO reservations (room_id, username, date, start_slot, end_slot, description)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (2, "alice", target_day.isoformat(), 8, 10, "future overlap"),
+        )
+    conn.close()
+
+    timetable.write_text(
+        f"profuser_3A_MAT1.p_{token}_8_10_407\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [PYTHON, "scripts/update_timetable.py", str(timetable), str(db_path)],
+        cwd=REPO_ROOT,
+        input="n\n",
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0
+    assert "Update would create future conflicts:" in result.stdout
+    assert "future overlap" in result.stdout
+    assert "Update skipped." in result.stdout
+
+    row = fetch_one(
+        db_path,
+        """
+        SELECT r.code AS room_code
+        FROM weekly_sessions ws
+        JOIN rooms r ON ws.room_id = r.id
+        WHERE ws.id = 1
+        """,
+    )
+    assert row["room_code"] == "406"
+
+
+def test_update_timetable_reports_conflicts_and_can_be_confirmed(tmp_path):
+    db_path = tmp_path / "timetable.db"
+    teachers = tmp_path / "teachers.csv"
+    subjects = tmp_path / "subjects.csv"
+    timetable = tmp_path / "timetable.txt"
+    target_day = dt.date.today() + dt.timedelta(days=14)
+    token = DAY_TOKENS[target_day.weekday()]
+
+    init_timetable_db(db_path, target_day=target_day)
+    write_metadata(teachers, [("profuser", "Prof Full Name")])
+    write_metadata(subjects, [("MAT1.p", "Mathematics 1")])
+
+    run_script(
+        [
+            "scripts/import_timetable.py",
+            str(db_path),
+            "--teachers",
+            str(teachers),
+            "--subjects",
+            str(subjects),
+        ],
+        input_text=f"profuser_3A_MAT1.p_{token}_8_10_406\n",
+    )
+
+    conn = sqlite3.connect(db_path)
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO reservations (room_id, username, date, start_slot, end_slot, description)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (2, "alice", target_day.isoformat(), 8, 10, "future overlap"),
+        )
+    conn.close()
+
+    timetable.write_text(
+        f"profuser_3A_MAT1.p_{token}_8_10_407\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [PYTHON, "scripts/update_timetable.py", str(timetable), str(db_path)],
+        cwd=REPO_ROOT,
+        input="y\n",
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0
+    assert "Update would create future conflicts:" in result.stdout
+    assert "future overlap" in result.stdout
+    assert "Update completed successfully." in result.stdout
+
+    row = fetch_one(
+        db_path,
+        """
+        SELECT r.code AS room_code
+        FROM weekly_sessions ws
+        JOIN rooms r ON ws.room_id = r.id
+        WHERE ws.id = 1
+        """,
+    )
     assert row["room_code"] == "407"
