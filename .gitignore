@@ -1,2 +1,11 @@
 *~
-
+venv
+__pycache__/
+*.pyc
+.pytest_cache/
+app.log
+app.db.bak
+app.db
+static/filip@*/
+RTK.md
+AGENTS.md

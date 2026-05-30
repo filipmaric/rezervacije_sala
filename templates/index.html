@@ -3,33 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Резервације учионица</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 20px; }
-        table { border-collapse: collapse; margin-top: 10px; }
-        th, td { border: 1px solid #999; padding: 5px 10px; text-align: center; width: 150px;  }
-        th { background-color: #f0f0f0; }
-        .weekly { background-color: #d1e7dd; }
-        .reservation { background-color: #f8d7da; }
-	.empty-slot { background-color: #f0f0f0; }
-	.hover { background-color: #d0ebff; }
-
-	/* Onemogući selekciju teksta u tabeli */
-	#occupancy {
-	    user-select: none;
-	    -webkit-user-select: none;
-	    -moz-user-select: none;
-	    -ms-user-select: none;
-	}
-
-	#auth-container {
-	    margin-bottom: 10px;
-	}
-
-	#login-info {
-	    margin: 0px;
-	    padding: 0px;
-	}
-    </style>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
 </head>
 <body>
   <h1>Резервације учионица</h1>
@@ -47,14 +21,18 @@
     </div>
   </div>
 
-  <label for="date">Datum:</label>
-  <input type="date" id="date" value="">
-  <button id="prev">&lt;&lt;</button>
-  <button id="next">&gt;&gt;</button>
-  <button id="load">Prikaži</button>
+  <label for="date">Датум:</label>
+  <input type="date" id="date-input" value="">
+  <button id="date-prev">&lt;&lt;</button>
+  <button id="date-next">&gt;&gt;</button>
 
   <div id="occupancy"></div>
 
-  <script src="/static/main.js"></script>
+  <script>
+    window.APP_CONFIG = {
+        BASE_PATH: "{{ url_for('index') }}".replace(/\/$/, "") 
+    };
+  </script>
+  <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>
 </body>
 </html>

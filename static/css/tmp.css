@@ -1,0 +1,193 @@
+Evo ga sav moj css.         body { font-family: Arial, sans-serif; margin: 20px; }
+        table { border-collapse: collapse; margin-top: 10px; }
+	th { background-color: #3399FF; }
+        th, td { border: 1px solid #999; padding: 5px 10px; text-align: center; width: 150px; }
+        .weekly { background-color: #eeeeee; }
+	.weekly-canceled { opacity: 0.3; }
+        .reservation { background-color: #99ccff; }
+	.empty-slot { background-color: #ffffff; }
+
+	.hover { background-color: #d0ebff; }
+
+	/* jači nadjačava default pozadine */
+	.drag-sensor.hover {
+	    background-color: rgba(208, 235, 255, 0.8) !important; /* Plava sa 80% vidljivosti */
+	}
+	
+	span.p {
+	    color: blue;
+	    font-weight: bold;
+	}
+
+	span.v {
+	    color: red;
+	}
+
+	span.k {
+	    color: green;
+	}
+
+	span.o {
+	    color: black;
+	}
+
+	.my {
+	    /* Ovo kreira beli sloj sa 70% providnosti preko postojeće boje pozadine */
+	    background-image: linear-gradient(rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0.7));
+	    border-left: 5px solid #2ecc71;
+	}
+	
+	.weekly-canceled {
+	    position: relative;
+	    padding: 0 !important;
+	}
+	
+	/* 1. Sadržaj (tekst) činimo "providnim" za miša */
+	.cell-content {
+	    position: relative;
+	    z-index: 10;      /* Iznad senzora je, ali... */
+	    pointer-events: none; /* ...miš prolazi kroz tekst do senzora! */
+	    padding: 5px;
+	}
+
+	/* 2. Dugme unutar tog sadržaja ponovo činimo "opipljivim" */
+	.weekly-canceled button {
+	    position: relative;
+	    z-index: 999 !important;
+	    pointer-events: auto !important; /* Klik radi, ali blokira drag na ovom mestu */
+	    cursor: pointer;
+	}
+
+	/* 3. Senzori su u sredini */
+	.sensor-container {
+	    position: absolute;
+	    top: 0; left: 0;
+	    width: 100%; height: 100%;
+	    display: flex;
+	    flex-direction: column;
+	    z-index: 5; /* Između pozadine ćelije i sadržaja */
+	    pointer-events: none; 
+	}
+
+	.drag-sensor {
+	    flex: 1;
+	    width: 100%;
+	    pointer-events: auto; /* Hvata drag na svim mestima gde nije dugme */
+	    background: rgba(0,0,0,0); /* Providno ali reaguje */
+	}
+
+	/* OBAVEZNO: Vizuelni feedback za drag */
+	.drag-sensor.hover {
+	    /* Tamnija, zasićenija plava (RGB: 34, 139, 230) sa 50% prozirnosti */
+	    background-color: rgba(34, 139, 230, 0.5) !important;
+    
+	    /* Dodajemo i unutrašnju senku da bi polje delovalo "udubljeno" i jasnije definisano */
+	    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1);
+    
+	    /* Opciono: bela boja teksta ispod dok je hover aktivan (ako je pozadina pretamna) */
+	    transition: background-color 0.2s ease;
+	}
+	
+	/* Onemogući selekciju teksta u tabeli */
+	#occupancy {
+	    user-select: none;
+	    -webkit-user-select: none;
+	    -moz-user-select: none;
+	    -ms-user-select: none;
+	}
+
+	#auth-container {
+	    margin-bottom: 10px;
+	}
+
+	#login-info {
+	    margin: 0px;
+	    padding: 0px;
+	}
+
+	.cal-menu { 
+	    display: none; 
+	    position: absolute; 
+	    background: white; 
+	    border: 1px solid #ccc; 
+	    z-index: 100;
+	    min-width: 150px;
+	    box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+	}
+	.calendar-dropdown:hover .cal-menu { display: block; }
+	.cal-menu a { 
+	    display: block; 
+	    padding: 8px; 
+	    text-decoration: none; 
+	    color: #333; 
+	    font-size: 14px;
+	}
+	.cal-menu a:hover { background: #f0f0f0; }
+
+	/* Dugme - potpuno providno */
+	.calendar-dropdown .cal-btn {
+	    background: transparent !important;
+	    border: none !important;
+	    font-size: 1.2rem !important;
+	    padding: 0 !important;
+	    cursor: pointer;
+	    outline: none;
+	    transition: transform 0.2s ease;
+	}
+
+	/* Blagi efekat kada se mišem pređe preko ikonice */
+	.cal-btn:hover {
+	    transform: scale(1.2);
+	}
+
+	/* Kartica unutar TD */
+	.res-card {
+	    display: flex;
+	    flex-direction: column;
+	    height: 100%;
+	    min-height: 100px;
+	    padding: 4px;
+	    box-sizing: border-box;
+	}
+
+	/* Red sa dugmićima */
+	.res-top-bar {
+	    display: flex;
+	    justify-content: space-between;
+	    align-items: flex-start;
+	    margin-bottom: 5px;
+	}
+
+	/* Dugme za brisanje */
+	.res-cancel-btn {
+	    background: #fff;
+	    border: 1px solid #ffcdd2;
+	    color: #d32f2f;
+	    border-radius: 3px;
+	    cursor: pointer;
+	    line-height: 1;
+	    padding: 2px 6px;
+	    font-weight: bold;
+	}
+	.res-cancel-btn:hover { background: #ffebee; }
+
+	/* Tekst u sredini */
+	.res-info {
+	    flex-grow: 1;
+	    display: flex;
+	    flex-direction: column;
+	    justify-content: center;
+	    text-align: center;
+	}
+
+	.res-user {
+	    font-size: 0.7rem;
+	    color: #666;
+	    margin-bottom: 2px;
+	}
+	
+	.res-desc {
+	    font-size: 0.9rem;
+	    font-weight: 500;
+	    color: #1a237e;
+	}
