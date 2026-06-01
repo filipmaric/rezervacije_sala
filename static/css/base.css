@@ -10,6 +10,264 @@ body {
 #auth-container { margin-bottom: 15px; }
 #login-info { margin: 0; padding: 0; font-weight: bold; }
 
+.semester-toolbar {
+    margin: 12px 0 18px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.course-card {
+    margin-bottom: 24px;
+}
+
+.attendance-panel,
+.attendance-roster,
+.challenge-panel,
+.attendance-qr-box {
+    margin: 16px 0;
+    padding: 16px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    background: #fafafa;
+}
+
+.attendance-success-panel {
+    text-align: center;
+    background: #eef9ef;
+    border-color: #b9e2bf;
+}
+
+.attendance-blocked-panel {
+    text-align: center;
+    background: #fff1f1;
+    border-color: #f0b3b3;
+}
+
+.attendance-success-panel h2 {
+    margin-bottom: 8px;
+}
+
+.attendance-success-panel p {
+    margin: 0;
+    color: #2f6b35;
+    font-weight: 600;
+}
+
+.attendance-blocked-panel h2 {
+    margin-bottom: 8px;
+}
+
+.attendance-blocked-panel p {
+    margin: 0;
+    color: #8a2c2c;
+    font-weight: 600;
+}
+
+.attendance-qr-box img {
+    display: block;
+    margin-bottom: 12px;
+    width: 240px;
+    height: 240px;
+}
+
+.attendance-code {
+    font-size: 2.25rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-align: center;
+    margin: 10px 0;
+}
+
+.attendance-countdown {
+    text-align: center;
+    font-size: 0.95rem;
+    color: #555;
+}
+
+.challenge-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.challenge-option-btn {
+    padding: 14px 18px;
+    border: 2px solid #888;
+    border-radius: 10px;
+    background: #fff;
+    cursor: pointer;
+    min-width: 88px;
+    min-height: 54px;
+    font-size: 1.15rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.attendance-freeze-notice {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: #fff7dd;
+    border: 1px solid #e7d08a;
+    color: #7a5a00;
+    font-weight: 600;
+}
+
+.attendance-btn {
+    font-size: 0.9rem;
+    margin-left: 0;
+}
+
+.attendance-toggle-btn {
+    font-size: 0.85rem;
+}
+
+.attendance-summary {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+}
+
+.attendance-collapsible > summary {
+    cursor: pointer;
+    font-weight: 700;
+    list-style: none;
+}
+
+.attendance-collapsible > summary::-webkit-details-marker {
+    display: none;
+}
+
+.attendance-collapsible > summary::after {
+    content: '▸';
+    float: right;
+    color: #666;
+}
+
+.attendance-collapsible[open] > summary::after {
+    content: '▾';
+}
+
+.attendance-collapsible > *:not(summary) {
+    margin-top: 12px;
+}
+
+.attendance-summary h4 {
+    margin: 0 0 10px;
+}
+
+.attendance-session-block + .attendance-session-block {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid #e7e7e7;
+}
+
+.attendance-session-block h4 {
+    margin: 0 0 10px;
+}
+
+.attendance-session-actions {
+    display: flex;
+    justify-content: flex-start;
+    margin: 8px 0 12px;
+    padding-top: 8px;
+    border-top: 1px solid #e7e7e7;
+}
+
+.attendance-dialog table {
+    width: 100%;
+}
+
+.attendance-dialog th,
+.attendance-dialog td {
+    text-align: left;
+}
+
+.attendance-summary-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 10px;
+}
+
+.attendance-summary-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+.attendance-summary-date {
+    font-weight: 700;
+}
+
+.attendance-summary-count {
+    color: #555;
+}
+
+.attendance-summary-room {
+    color: #333;
+}
+
+.attendance-summary-btn {
+    margin-left: auto;
+}
+
+.attendance-dialog {
+    width: min(680px, calc(100vw - 32px));
+    border: 1px solid #ccc;
+    border-radius: 10px;
+    padding: 18px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.attendance-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.35);
+}
+
+.attendance-dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.attendance-dialog-title-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.attendance-dialog-header h3 {
+    margin: 0;
+}
+
+.attendance-dialog-subtitle {
+    margin: 0;
+    color: #555;
+    font-size: 0.95rem;
+}
+
+.attendance-dialog-close {
+    white-space: nowrap;
+}
+
+.attendance-dialog ol {
+    margin: 0;
+    padding-inline-start: 24px;
+}
+
 /* ==========================================================================
    2. TABELA I LAYOUT
    ========================================================================== */
@@ -88,6 +346,18 @@ table {
     align-items: flex-start;
     margin-bottom: 5px;
     z-index: 20; /* Iznad svega da bi dugmići radili */
+}
+
+.res-top-bar-left,
+.res-top-bar-right {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.res-top-bar-right {
+    justify-content: flex-end;
+    margin-left: auto;
 }
 
 .res-info {

@@ -23,6 +23,7 @@ const AuthManager = {
                 this.elements.loginForm.style.display = "none";
                 this.elements.loginInfo.textContent = this.username;
                 this.elements.logoutForm.style.display = "inline-block";
+                this.elements.myReservationsLink.style.display = "inline-block";
             } else {
                 this.reset();
             }
@@ -38,6 +39,7 @@ const AuthManager = {
         this.elements.loginForm.style.display = "block";
         this.elements.logoutForm.style.display = "none";
         this.elements.loginInfo.textContent = "";
+        this.elements.myReservationsLink.style.display = "none";
     },
 
     async login(username, password, onSuccess) {
@@ -198,6 +200,10 @@ const TableManager = {
             room_id: room_id,
             room: this.rooms[room_id]?.name || room_id,
             sensorContainer: null,
+            onOpenAttendance: (kind, eventId, date) => {
+                const basePath = window.APP_CONFIG?.BASE_PATH || "";
+                window.location.href = `${basePath}/attendance/${kind}/${eventId}/${date}`;
+            },
             onDelete: async (id) => {
                 await API.deleteReservation(id);
                 App.refresh(); // globalno osvežavanje celog prikaza
@@ -301,7 +307,8 @@ const App = {
         AuthManager.init({
             loginForm: document.getElementById("login-form"),
             loginInfo: document.getElementById("login-info"),
-            logoutForm: document.getElementById("logout-form")
+            logoutForm: document.getElementById("logout-form"),
+            myReservationsLink: document.getElementById("my-reservations-link")
         });
 
 	// prikazujemo odgovarajuće elemente za login/logout

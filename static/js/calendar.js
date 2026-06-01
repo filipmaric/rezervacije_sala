@@ -3,6 +3,7 @@ document.addEventListener("DOMContentLoaded", async function() {
     const yearSelect = document.getElementById('year');
     const calendarDiv = document.getElementById('calendar');
     const saveBtn = document.getElementById('saveBtn');
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
     const currentUsername = 'demo'; // primer, po potrebi uzeti iz session
 
@@ -142,7 +143,10 @@ document.addEventListener("DOMContentLoaded", async function() {
 	// POST request za backend:
 	await fetch('/update_calendar', {
           method: 'POST',
-          headers: {'Content-Type':'application/json'},
+          headers: {
+              'Content-Type':'application/json',
+              ...(csrfToken ? {'X-CSRFToken': csrfToken} : {}),
+          },
           body: JSON.stringify(updates)
 	  });
     });

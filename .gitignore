@@ -6,6 +6,8 @@ __pycache__/
 app.log
 app.db.bak
 app.db
+rezervacije.env
+codex
 static/filip@*/
 RTK.md
 AGENTS.md

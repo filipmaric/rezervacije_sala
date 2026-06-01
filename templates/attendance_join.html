@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Пријава присуства</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+</head>
+<body>
+  <h1>Пријава присуства</h1>
+
+  <div id="attendance-join-root"
+       data-kind="{{ attendance_kind }}"
+       data-event-id="{{ attendance_event_id }}"
+       data-event-date="{{ attendance_event_date }}">
+  </div>
+
+  <script>
+    window.APP_CONFIG = {
+        BASE_PATH: "{{ url_for('index') }}".replace(/\/$/, "")
+    };
+  </script>
+  <script type="module" src="{{ url_for('static', filename='js/attendanceJoin.js') }}"></script>
+</body>
+</html>

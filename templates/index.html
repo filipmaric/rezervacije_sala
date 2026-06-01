@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="sr">
 <head>
     <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>Резервације учионица</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
 </head>
@@ -10,14 +11,15 @@
 
   <div id="auth-container">
     <form id="login-form">
-        <input type="text" id="username" placeholder="Username" required>
-        <input type="password" id="password" placeholder="Password" required>
-        <button type="submit">Login</button>
+        <input type="text" id="username" placeholder="Корисничко име" required>
+        <input type="password" id="password" placeholder="Лозинка" required>
+        <button type="submit">Пријава</button>
     </form>
 
     <div id="logout-form" style="display:none">
       <p id='login-info'></p>
-      <button id="logout">Logout</button>
+      <a id="my-reservations-link" href="{{ url_for('my_reservations_view') }}" style="display:none">Моје резервације</a>
+      <button id="logout">Одјава</button>
     </div>
   </div>
 

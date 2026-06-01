@@ -35,21 +35,91 @@ The default local mount point is `/`.
 
 ## Production Deployment
 
-If you run the app on the server under `/rezervacije`, set these environment variables:
+In production, the app is started by `systemd` through `gunicorn` and `wsgi:application`.
+The real production configuration should be kept in an environment file, for example:
+
+- `/var/www/rezervacije/rezervacije.env`
+
+The repository includes [`rezervacije.env.example`](/home/filip/Dropbox/prodekan/rezervacije_sala/rezervacije.env.example) as a template you can copy and fill in.
+
+The service unit should load that file with `EnvironmentFile=...`.
+
+Required variables:
 
 ```bash
-export APPLICATION_ROOT=/rezervacije
-export STATIC_URL_PATH=/rezervacije/static
-export AUTH_BACKEND=radius
+APP_ENV=production
+APPLICATION_ROOT=/rezervacije
+STATIC_URL_PATH=/rezervacije/static
+TEACHER_AUTH_BACKEND=radius
+STUDENT_AUTH_BACKEND=radius
+SECRET_KEY=your_flask_session_secret
+SERVICE_API_KEY=your_service_api_key
+ATTENDANCE_SECRET=your_attendance_signing_secret
+TEACHER_RADIUS_SERVER=your.teacher.radius.server
+TEACHER_RADIUS_SECRET=your_teacher_radius_secret
+TEACHER_RADIUS_DICTIONARY=/path/to/teacher/dictionary
+STUDENT_RADIUS_SERVER=your.student.radius.server
+STUDENT_RADIUS_SECRET=your_student_radius_secret
+STUDENT_RADIUS_DICTIONARY=/path/to/student/dictionary
 ```
 
-Then start the app under your process manager or service supervisor.
+Example service file:
 
-If you keep the helper script in this repo, you can also run:
+```ini
+[Unit]
+Description=Gunicorn za Flask aplikaciju rezervacije sala
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/rezervacije
+Environment="PATH=/var/www/rezervacije/venv/bin"
+EnvironmentFile=/var/www/rezervacije/rezervacije.env
+ExecStart=/var/www/rezervacije/venv/bin/gunicorn -b 127.0.0.1:5000 wsgi:application
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Then reload and restart:
 
 ```bash
-bash scripts/run_prod.sh
+sudo systemctl daemon-reload
+sudo systemctl restart rezervacije
 ```
+
+`scripts/run_prod.sh` is optional. It is a convenience launcher for manual runs and ad-hoc testing; it is not the canonical production startup path.
+
+The helper script refuses to start unless the required variables are set.
+
+## Lecture Attendance
+
+The main occupancy table shows a QR action on lecture entries that the logged-in user can manage. That opens an attendance page with:
+
+- a QR code for students to scan,
+- a live list of registered students,
+- and a student check-in page that uses a rotating short challenge code.
+
+Operationally, the attendance flow uses:
+
+- a QR link that rotates every 8 seconds,
+- a student attendance session that remains valid for 90 seconds after scanning,
+- and a separate challenge code that rotates every 10 seconds on the teacher page.
+
+Teacher authentication uses the `TEACHER_AUTH_BACKEND`/`TEACHER_RADIUS_*` variables above.
+
+Student authentication uses a separate RADIUS server and its own variables:
+
+```bash
+export STUDENT_AUTH_BACKEND=radius
+export STUDENT_RADIUS_SERVER=your.radius.server
+export STUDENT_RADIUS_SECRET=your_shared_secret
+export STUDENT_RADIUS_DICTIONARY=/path/to/dictionary
+```
+
+The challenge generator uses `ATTENDANCE_SECRET` if you want to override the default signing secret.
 
 ## Timetable Import Tools
 
@@ -92,7 +162,7 @@ The script exits with status `1` if conflicts are found and `0` otherwise.
 ## Notes
 
 - The app creates `app.db` automatically if it is missing, but `python app.py init-db` is the explicit setup path.
-- Local development uses mock authentication unless `AUTH_BACKEND=radius` is set.
+- Local development uses mock teacher authentication unless `TEACHER_AUTH_BACKEND=radius` is set.
 - Run the test suite with:
 
 ```bash

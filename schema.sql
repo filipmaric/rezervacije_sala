@@ -76,3 +76,19 @@ CREATE TABLE weekly_sessions (
 );
 CREATE TABLE rooms (id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, capacity INTEGER DEFAULT 0, type TEXT, location TEXT NOT NULL, code TEXT UNIQUE, priority INTEGER DEFAULT (100));
 CREATE TABLE weekly_cancellations ( id INTEGER PRIMARY KEY AUTOINCREMENT, weekly_session_id INTEGER NOT NULL, date TEXT NOT NULL, username TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, UNIQUE(weekly_session_id, date), FOREIGN KEY (weekly_session_id) REFERENCES weekly_sessions(id) ON DELETE CASCADE );
+CREATE TABLE attendance_records (
+    id INTEGER PRIMARY KEY,
+    event_kind TEXT NOT NULL CHECK(event_kind IN ('weekly', 'reservation')),
+    event_id INTEGER NOT NULL,
+    event_date TEXT NOT NULL,
+    username TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(event_kind, event_id, event_date, username)
+);
+CREATE INDEX idx_attendance_records_event ON attendance_records(event_kind, event_id, event_date);
+CREATE TABLE attendance_session_failures (
+    session_token TEXT PRIMARY KEY,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    blocked INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);

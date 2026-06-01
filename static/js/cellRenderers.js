@@ -45,6 +45,36 @@ function renderCancelBtn(container, cellUsername, ctx, onAction) {
     return null;
 }
 
+function renderAttendanceBtn(container, ctx, onAction) {
+    if (!ctx.user) {
+        return null;
+    }
+    const btn = document.createElement("button");
+    btn.className = "res-cancel-btn attendance-btn";
+    btn.textContent = "▣";
+    btn.title = "QR код за присуство";
+    btn.onclick = (e) => {
+        e.stopPropagation();
+        onAction();
+    };
+    container.appendChild(btn);
+    return btn;
+}
+
+function createTopBar() {
+    const topBar = document.createElement("div");
+    topBar.className = "res-top-bar";
+
+    const left = document.createElement("div");
+    left.className = "res-top-bar-left";
+
+    const right = document.createElement("div");
+    right.className = "res-top-bar-right";
+
+    topBar.append(left, right);
+    return { topBar, left, right };
+}
+
 // Pomoćna za kalendar (unutar ovog fajla)
 function renderCalendarMenu(cellData, fullDate, container) {
 	// Priprema podataka
@@ -72,7 +102,7 @@ function renderCalendarMenu(cellData, fullDate, container) {
 	menu.className = 'cal-menu';
 
 	// Google Calendar Link
-	const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startTime}/${endTime}&details=${encodeURIComponent(description)}&location=${encodeURIComponent('MatF, sala ' + cellData.room)}`;
+	const googleUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startTime}/${endTime}&details=${encodeURIComponent(description)}&location=${encodeURIComponent('MatF, сала ' + cellData.room)}`;
 	const googleLink = document.createElement('a');
 	googleLink.href = googleUrl;
 	googleLink.target = '_blank';
@@ -87,7 +117,7 @@ function renderCalendarMenu(cellData, fullDate, container) {
             `DTEND:${endTime}`,
             `SUMMARY:${title}`,
             `DESCRIPTION:${description}`,
-            `LOCATION:Sala ${cellData.room}`,
+            `LOCATION:Сала ${cellData.room}`,
             "END:VEVENT",
             "END:VCALENDAR"
 	].join("\n");
@@ -122,18 +152,19 @@ export const CellRenderers = {
         const card = document.createElement("div");
         card.className = "res-card";
 
-        const topBar = document.createElement("div");
-        topBar.className = "res-top-bar";
+        const { topBar, left, right } = createTopBar();
 
         // cancel dugme (ako korisnik ima prava)
-	const btn = renderCancelBtn(topBar, cellData.username, ctx, () => ctx.onDelete(cellData.id));
-	// ako se dugme nije nacrtalo (nema prava), dodajemo spacer za flexbox balans
-	if (!btn) topBar.appendChild(document.createElement("span"));
+	const btn = renderCancelBtn(right, cellData.username, ctx, () => ctx.onDelete(cellData.id));
 
         // dugme za integraciju sa kalendarima
         const calWrap = document.createElement("div");
         renderCalendarMenu(cellData, date, calWrap);
-        topBar.appendChild(calWrap);
+        left.appendChild(calWrap);
+
+        const attendanceWrap = document.createElement("div");
+        renderAttendanceBtn(attendanceWrap, ctx, () => ctx.onOpenAttendance("reservation", cellData.id, date));
+        left.appendChild(attendanceWrap);
 
 	// opis rezervacije
         // izdvajamo samo deo pre '@' ako je u pitanju email adresa
@@ -162,15 +193,12 @@ export const CellRenderers = {
 	    td.classList.add("my");
 
         // top bar sadrži kontrole - dugme za otkazivanje, kelendar
-        const topBar = document.createElement("div");
-        topBar.className = "res-top-bar";
+        const { topBar, left, right } = createTopBar();
 
         // dugme za otkazivanje/vraćanje časa
-        const btn = renderCancelBtn(topBar, cellData.teacher_username, ctx, () => 
+        const btn = renderCancelBtn(right, cellData.teacher_username, ctx, () => 
             ctx.onToggleWeekly(cellData.weekly_session_id, date)
         );
-	// ako se dugme nije nacrtalo (nema prava), dodajemo spacer za flexbox balans
-        if (!btn) topBar.appendChild(document.createElement("span"));
 
         // integracija sa kalendarom (samo ako čas nije otkazan)
         if (!cellData.canceled) {
@@ -185,10 +213,16 @@ export const CellRenderers = {
                 end: cellData.end
             };
             renderCalendarMenu(calData, date, calWrap);
-            topBar.appendChild(calWrap);
-        } else {
-            topBar.appendChild(document.createElement("span"));
+            left.appendChild(calWrap);
         }
+
+        const attendanceWrap = document.createElement("div");
+        if (!cellData.canceled) {
+            renderAttendanceBtn(attendanceWrap, ctx, () =>
+                ctx.onOpenAttendance("weekly", cellData.weekly_session_id, date)
+            );
+        }
+        left.appendChild(attendanceWrap);
 
         // sadržaj ćelije
         const info = document.createElement("div");
@@ -224,4 +258,3 @@ export const CellRenderers = {
         td.appendChild(inner);
     }
 };
-

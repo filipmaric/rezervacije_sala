@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Моје резервације</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+</head>
+<body>
+  <h1>Моје резервације</h1>
+
+  <p><a href="{{ url_for('index') }}">Назад на распоред</a></p>
+
+  <p id="page-message"></p>
+
+  <div id="reservations-page" style="display:none">
+    <div class="semester-toolbar">
+      <label for="semester-select">Семестар:</label>
+      <select id="semester-select"></select>
+    </div>
+
+    <section>
+      <h2>Личне резервације</h2>
+      <div id="personal-reservations"></div>
+    </section>
+
+    <section>
+      <h2>Предмети и недељни термини</h2>
+      <div id="course-reservations"></div>
+    </section>
+  </div>
+
+  <script>
+    window.APP_CONFIG = {
+        BASE_PATH: "{{ url_for('index') }}".replace(/\/$/, "")
+    };
+  </script>
+  <script type="module" src="{{ url_for('static', filename='js/myReservations.js') }}"></script>
+</body>
+</html>

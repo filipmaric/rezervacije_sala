@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>Присуство на часу</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
+</head>
+<body>
+  <h1>Присуство на часу</h1>
+
+  <p><a href="{{ url_for('index') }}">Назад на распоред</a></p>
+
+  <div id="attendance-root"
+       data-kind="{{ attendance_kind }}"
+       data-event-id="{{ attendance_event_id }}"
+       data-event-date="{{ attendance_event_date }}">
+  </div>
+
+  <script>
+    window.APP_CONFIG = {
+        BASE_PATH: "{{ url_for('index') }}".replace(/\/$/, "")
+    };
+  </script>
+  <script type="module" src="{{ url_for('static', filename='js/attendanceTeacher.js') }}"></script>
+</body>
+</html>

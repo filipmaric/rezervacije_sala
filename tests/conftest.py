@@ -2,6 +2,7 @@ import pytest
 import sqlite3
 import tempfile
 import os
+import secrets
 
 import app as myapp
 
@@ -119,6 +120,42 @@ class TestDB:
     def schedule(self):
         return ScheduleFactory(self)    
 
+
+class CsrfClientProxy:
+    def __init__(self, client, csrf_token):
+        self._client = client
+        self.csrf_token = csrf_token
+
+    def _with_csrf(self, kwargs):
+        headers = dict(kwargs.get("headers") or {})
+        headers.setdefault("X-CSRFToken", self.csrf_token)
+        kwargs["headers"] = headers
+        return kwargs
+
+    def get(self, *args, **kwargs):
+        return self._client.get(*args, **kwargs)
+
+    def post(self, *args, **kwargs):
+        return self._client.post(*args, **self._with_csrf(kwargs))
+
+    def delete(self, *args, **kwargs):
+        return self._client.delete(*args, **self._with_csrf(kwargs))
+
+    def put(self, *args, **kwargs):
+        return self._client.put(*args, **self._with_csrf(kwargs))
+
+    def patch(self, *args, **kwargs):
+        return self._client.patch(*args, **self._with_csrf(kwargs))
+
+    def open(self, *args, **kwargs):
+        method = kwargs.get("method")
+        if method in {"POST", "PUT", "PATCH", "DELETE"}:
+            kwargs = self._with_csrf(kwargs)
+        return self._client.open(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._client, name)
+
 @pytest.fixture
 def app():
     db_fd, db_path = tempfile.mkstemp()
@@ -140,6 +177,8 @@ def app():
         conn.commit()
         conn.close()
 
+    myapp.reset_rate_limits()
+
     yield myapp.app
 
     os.close(db_fd)
@@ -148,7 +187,11 @@ def app():
 
 @pytest.fixture
 def client(app):
-    return app.test_client()
+    raw_client = app.test_client()
+    csrf_token = secrets.token_urlsafe(32)
+    with raw_client.session_transaction() as sess:
+        sess["_csrf_token"] = csrf_token
+    return CsrfClientProxy(raw_client, csrf_token)
 
 
 @pytest.fixture
