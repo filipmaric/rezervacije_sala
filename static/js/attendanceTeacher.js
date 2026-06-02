@@ -47,15 +47,16 @@ function renderQr(root, joinUrl) {
     const box = document.createElement('div');
     box.className = 'attendance-qr-box';
 
+    const link = document.createElement('a');
+    link.href = joinUrl;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.title = 'Отвори QR линк';
+
     const img = document.createElement('img');
     img.alt = 'QR код за пријаву присуства';
     img.src = buildQrUrl(joinUrl);
-    box.appendChild(img);
-
-    const link = document.createElement('a');
-    link.href = joinUrl;
-    link.textContent = joinUrl;
-    link.target = '_blank';
+    link.appendChild(img);
     box.appendChild(link);
 
     root.appendChild(box);
@@ -70,10 +71,6 @@ function renderChallenge(root, challenge, event) {
     }
 
     box.innerHTML = '';
-
-    const title = document.createElement('h3');
-    title.textContent = 'Тренутни број';
-    box.appendChild(title);
 
     const code = document.createElement('div');
     code.className = 'attendance-code';

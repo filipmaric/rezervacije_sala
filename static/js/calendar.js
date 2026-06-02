@@ -83,7 +83,7 @@ document.addEventListener("DOMContentLoaded", async function() {
 		e.preventDefault();
 		if (holidays.includes(dateStr)) return;
 		
-		showWeekdayMenu(e.pageX, e.pageY, dateStr, td);
+		showWeekdayMenu(dateStr, td);
 	    });
 
             calendarDiv.appendChild(td);
@@ -94,8 +94,12 @@ document.addEventListener("DOMContentLoaded", async function() {
     const weekdayNames = ["Pon", "Uto", "Sre", "Čet", "Pet", "Sub", "Ned"];
 
     // otvaranje menija
-    function showWeekdayMenu(x, y, dateStr, dayElem) {
+    function showWeekdayMenu(dateStr, dayElem) {
 	weekdayMenu.innerHTML = "";
+	weekdayMenu.style.visibility = "hidden";
+	weekdayMenu.style.display = "flex";
+	weekdayMenu.style.left = "0px";
+	weekdayMenu.style.top = "0px";
 
 	// opcija Default
 	const def = document.createElement('div');
@@ -116,12 +120,24 @@ document.addEventListener("DOMContentLoaded", async function() {
 		dayElem.classList.add('custom-weekday');
 		hideMenu();
             };
-            weekdayMenu.appendChild(opt);
+	    weekdayMenu.appendChild(opt);
 	});
 
-	weekdayMenu.style.left = x + "px";
-	weekdayMenu.style.top = y + "px";
-	weekdayMenu.style.display = "flex";
+	const margin = 8;
+	const cellRect = dayElem.getBoundingClientRect();
+	const menuRect = weekdayMenu.getBoundingClientRect();
+	let left = cellRect.right + margin;
+	if (left + menuRect.width > window.innerWidth - margin) {
+	    left = cellRect.left - menuRect.width - margin;
+	}
+	left = Math.min(Math.max(left, margin), Math.max(margin, window.innerWidth - menuRect.width - margin));
+	const top = Math.min(
+	    Math.max(cellRect.top, margin),
+	    Math.max(margin, window.innerHeight - menuRect.height - margin)
+	);
+	weekdayMenu.style.left = left + "px";
+	weekdayMenu.style.top = top + "px";
+	weekdayMenu.style.visibility = "visible";
     }
 
     function hideMenu() { weekdayMenu.style.display = "none"; }

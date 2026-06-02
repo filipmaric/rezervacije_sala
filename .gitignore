@@ -7,7 +7,10 @@ app.log
 app.db.bak
 app.db
 rezervacije.env
+app.db-shm
+app.db-wal
 codex
 static/filip@*/
+site/
 RTK.md
 AGENTS.md

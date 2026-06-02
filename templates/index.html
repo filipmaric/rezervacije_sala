@@ -18,10 +18,13 @@
 
     <div id="logout-form" style="display:none">
       <p id='login-info'></p>
-      <a id="my-reservations-link" href="{{ url_for('my_reservations_view') }}" style="display:none">Моје резервације</a>
       <button id="logout">Одјава</button>
     </div>
   </div>
+
+  <p id="my-reservations-wrap" style="display:none">
+    <a id="my-reservations-link" href="{{ url_for('reservations_views.my_reservations_view') }}">Моје резервације</a>
+  </p>
 
   <label for="date">Датум:</label>
   <input type="date" id="date-input" value="">
@@ -32,7 +35,7 @@
 
   <script>
     window.APP_CONFIG = {
-        BASE_PATH: "{{ url_for('index') }}".replace(/\/$/, "") 
+        BASE_PATH: "{{ url_for('main.index') }}".replace(/\/$/, "") 
     };
   </script>
   <script type="module" src="{{ url_for('static', filename='js/main.js') }}"></script>

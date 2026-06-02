@@ -2,6 +2,8 @@ import time
 import secrets
 
 import app as myapp
+import auth as authmod
+import config as cfg
 
 
 def login(client, username="alice", password="secret"):
@@ -34,7 +36,7 @@ def test_login_logout_and_whoami(client):
 
 
 def test_login_failure(client, monkeypatch):
-    monkeypatch.setattr(myapp, "radius_auth", lambda username, password: False)
+    monkeypatch.setattr(authmod, "radius_auth", lambda username, password: False)
 
     r = login(client, "alice")
     assert r.status_code == 401
@@ -42,7 +44,7 @@ def test_login_failure(client, monkeypatch):
 
 
 def test_login_rate_limit(client, monkeypatch):
-    monkeypatch.setattr(myapp, "radius_auth", lambda username, password: True)
+    monkeypatch.setattr(authmod, "radius_auth", lambda username, password: True)
     monkeypatch.setitem(myapp.RATE_LIMITS, "login", (2, 60))
 
     assert login(client, "alice").status_code == 200
@@ -106,10 +108,10 @@ def test_my_reservations_data_groups_personal_and_courses(client, db):
         end="2025-12-31",
     )
 
-    room = db.room("A1")
+    room = db.room("R1")
     teacher = db.teacher("Prof", "alice")
     other_teacher = db.teacher("Other Prof", "other.prof")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     other_course = db.course("Databases")
 
     db.reservation(
@@ -180,7 +182,7 @@ def test_my_reservations_data_groups_personal_and_courses(client, db):
 
     assert data["selected_semester"]["name"] == "Current 2026"
     assert [item["description"] for item in data["personal_reservations"]] == ["current personal"]
-    assert [course_item["course_name"] for course_item in data["courses"]] == ["Algorithms"]
+    assert [course_item["course_name"] for course_item in data["courses"]] == ["NumericalMethods"]
     assert [session["start_slot"] for session in data["courses"][0]["sessions"]] == [10]
     assert data["courses"][0]["sessions"][0]["instances"] == ["2026-03-09", "2026-03-23"]
 
@@ -202,9 +204,9 @@ def test_attendance_join_and_roster(client, db):
         start="2026-01-01",
         end="2026-12-31",
     )
-    room = db.room("A1")
+    room = db.room("R1")
     teacher = db.teacher("Prof", "alice")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     session = db.course_session(course, teacher, semester)
     weekly_session_id = db.weekly_session(
         session_id=session,
@@ -228,11 +230,11 @@ def test_attendance_join_and_roster(client, db):
     challenge = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/challenge")
     assert challenge.status_code == 200
     challenge_data = challenge.get_json()
-    assert challenge_data["event"]["course_name"] == "Algorithms"
+    assert challenge_data["event"]["course_name"] == "NumericalMethods"
     assert isinstance(challenge_data["challenge"]["current_code"], int)
     assert len(challenge_data["challenge"]["options"]) == 4
 
-    bucket = int(time.time() // myapp.ATTENDANCE_CHALLENGE_TTL)
+    bucket = int(time.time() // cfg.ATTENDANCE_CHALLENGE_TTL)
     code = myapp.attendance_code_for_bucket("weekly", weekly_session_id, "2026-03-09", bucket)
 
     join = client.post(
@@ -249,7 +251,7 @@ def test_attendance_join_and_roster(client, db):
     roster_after = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/data")
     assert roster_after.status_code == 200
     roster_after_data = roster_after.get_json()
-    assert roster_after_data["event"]["course_name"] == "Algorithms"
+    assert roster_after_data["event"]["course_name"] == "NumericalMethods"
     assert [student["username"] for student in roster_after_data["students"]] == ["student1"]
 
 
@@ -259,9 +261,9 @@ def test_attendance_join_token_rotates_every_8_seconds(db):
         start="2026-01-01",
         end="2026-12-31",
     )
-    room = db.room("A1")
+    room = db.room("R1")
     teacher = db.teacher("Prof", "alice")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     session = db.course_session(course, teacher, semester)
     weekly_session_id = db.weekly_session(
         session_id=session,
@@ -309,9 +311,9 @@ def test_attendance_join_blocks_after_two_wrong_numbers(client, db):
         start="2026-01-01",
         end="2026-12-31",
     )
-    room = db.room("A1")
+    room = db.room("R1")
     teacher = db.teacher("Prof", "alice")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     session = db.course_session(course, teacher, semester)
     weekly_session_id = db.weekly_session(
         session_id=session,
@@ -365,9 +367,9 @@ def test_attendance_join_blocks_after_two_wrong_numbers(client, db):
 
 def test_attendance_session_expired_is_reported_separately(client, db):
     schedule = db.schedule()
-    room = schedule.room("A1")
+    room = schedule.room("R1")
     teacher = schedule.teacher("Prof", "alice")
-    course = schedule.course("Algorithms")
+    course = schedule.course("NumericalMethods")
     session = db.course_session(course, teacher, schedule.semester_id)
     weekly_session_id = db.weekly_session(
         session_id=session,
@@ -378,7 +380,7 @@ def test_attendance_session_expired_is_reported_separately(client, db):
     )
 
     expired_now = myapp.datetime.datetime.now() - myapp.datetime.timedelta(
-        seconds=myapp.ATTENDANCE_SESSION_TTL + 1
+        seconds=cfg.ATTENDANCE_SESSION_TTL + 1
     )
     cookie_name = myapp.attendance_session_cookie_name(
         "weekly",
@@ -402,9 +404,9 @@ def test_attendance_session_expired_is_reported_separately(client, db):
 
 def test_expired_attendance_session_clears_failure_rows(client, db):
     schedule = db.schedule()
-    room = schedule.room("A1")
+    room = schedule.room("R1")
     teacher = schedule.teacher("Prof", "alice")
-    course = schedule.course("Algorithms")
+    course = schedule.course("NumericalMethods")
     session = db.course_session(course, teacher, schedule.semester_id)
     weekly_session_id = db.weekly_session(
         session_id=session,
@@ -415,7 +417,7 @@ def test_expired_attendance_session_clears_failure_rows(client, db):
     )
 
     expired_now = myapp.datetime.datetime.now() - myapp.datetime.timedelta(
-        seconds=myapp.ATTENDANCE_SESSION_TTL + 1
+        seconds=cfg.ATTENDANCE_SESSION_TTL + 1
     )
     cookie_name = myapp.attendance_session_cookie_name(
         "weekly",
@@ -466,7 +468,7 @@ def test_expired_attendance_session_clears_failure_rows(client, db):
 
 
 def test_reserve_success_and_conflicts(client, db):
-    room = db.room("A1")
+    room = db.room("R1")
 
     login(client, "alice")
 
@@ -496,7 +498,7 @@ def test_reserve_success_and_conflicts(client, db):
     assert r.status_code == 409
 
     teacher = db.teacher("Prof", "prof")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     semester = db.semester(name="Spring 2026")
     session = db.course_session(course, teacher, semester)
     db.weekly_session(
@@ -524,7 +526,7 @@ def test_reserve_success_and_conflicts(client, db):
 
 
 def test_reserve_validation_errors(client, db):
-    db.room("A1")
+    db.room("R1")
     login(client, "alice")
 
     r = client.post("/reserve", json={})
@@ -568,7 +570,7 @@ def test_reserve_validation_errors(client, db):
 
 
 def test_admin_can_set_username_on_reserve(client, db):
-    db.room("A1")
+    db.room("R1")
     db.execute("INSERT INTO administrators (username) VALUES (?)", ("admin",))
     login(client, "admin")
 
@@ -590,7 +592,7 @@ def test_admin_can_set_username_on_reserve(client, db):
 
 
 def test_delete_reservation_permissions(client, db):
-    room = db.room("A1")
+    room = db.room("R1")
     res_id = db.reservation(
         room_id=room,
         date="2026-03-09",
@@ -613,7 +615,7 @@ def test_delete_reservation_permissions(client, db):
 
 
 def test_delete_reservation_unauthorized(client, db):
-    room = db.room("A1")
+    room = db.room("R1")
     res_id = db.reservation(
         room_id=room,
         date="2026-03-09",
@@ -629,7 +631,7 @@ def test_delete_reservation_unauthorized(client, db):
 
 
 def test_bulk_reservations_atomic(client, db):
-    room1 = db.room("A1")
+    room1 = db.room("R1")
     room2 = db.room("A2")
 
     login(client, "alice")
@@ -758,7 +760,7 @@ def test_service_token_update_calendar(client, db):
 
 
 def test_service_token_bulk_reservations(client, db):
-    room1 = db.room("A1")
+    room1 = db.room("R1")
     room2 = db.room("A2")
 
     r = client.post(
@@ -794,7 +796,7 @@ def test_service_token_bulk_reservations(client, db):
 
 
 def test_reservation_rate_limit(client, db, monkeypatch):
-    room = db.room("A1")
+    room = db.room("R1")
     login(client, "alice")
     monkeypatch.setitem(myapp.RATE_LIMITS, "reservation", (1, 60))
 
@@ -825,9 +827,9 @@ def test_reservation_rate_limit(client, db, monkeypatch):
 
 
 def test_weekly_session_cancel_and_conflict(client, db):
-    room = db.room("A1")
+    room = db.room("R1")
     teacher = db.teacher("Prof", "prof")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     semester = db.semester()
     session = db.course_session(course, teacher, semester)
     weekly_id = db.weekly_session(
@@ -868,12 +870,12 @@ def test_weekly_session_cancel_and_conflict(client, db):
 
 def test_weekly_session_cancel_validation(client, db):
     teacher = db.teacher("Prof", "prof")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     semester = db.semester()
     session = db.course_session(course, teacher, semester)
     weekly_id = db.weekly_session(
         session_id=session,
-        room_id=db.room("A1"),
+        room_id=db.room("R1"),
         day_of_week=1,
         start_slot=2,
         end_slot=4,

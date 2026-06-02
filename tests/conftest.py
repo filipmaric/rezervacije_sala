@@ -15,7 +15,7 @@ class ScheduleFactory:
         self.teachers = {}
         self.courses = {}
 
-    def room(self, name="A1", capacity=50, type="lecture"):
+    def room(self, name="R1", capacity=50, type="lecture"):
         room_id = self.db.room(name, capacity, type)
         self.rooms[name] = room_id
         return room_id
@@ -32,7 +32,7 @@ class ScheduleFactory:
         self.courses[name] = course_id
         return course_id
 
-    def lecture(self, course, teacher="Teacher", room="A1",
+    def lecture(self, course, teacher="Teacher", room="R1",
                 day=1, start=2, end=4, type="lecture"):
 
         if course not in self.courses:
@@ -67,7 +67,7 @@ class TestDB:
         with self.app.app_context():
             return myapp.execute_db(query, args)
 
-    def room(self, name="A1", capacity=50, type="lecture", location="A", priority=1):
+    def room(self, name="R1", capacity=50, type="lecture", location="A", priority=1):
         return self.execute(
             """INSERT INTO rooms (name, capacity, type, location, priority)
                VALUES (?, ?, ?, ?, ?)""",

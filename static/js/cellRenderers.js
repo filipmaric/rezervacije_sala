@@ -1,5 +1,15 @@
 import { formatApiDate } from './util.js';
 
+function formatLectureType(type) {
+    const normalized = String(type || '').toLowerCase();
+    const labels = {
+        p: 'предавања',
+        v: 'вежбе',
+        k: 'колоквијум',
+    };
+    return labels[normalized] || type || '';
+}
+
 // Pomoćna funkcija unutar cellRenderers.js koja eliminiše ponavljanje
 function getWeeklyHTML(cellData) {
     const canceledLabel = cellData.canceled ? " (отказано)" : "";
@@ -45,8 +55,8 @@ function renderCancelBtn(container, cellUsername, ctx, onAction) {
     return null;
 }
 
-function renderAttendanceBtn(container, ctx, onAction) {
-    if (!ctx.user) {
+function renderAttendanceBtn(container, ownerUsername, ctx, onAction) {
+    if (!ctx.user || ownerUsername !== ctx.user) {
         return null;
     }
     const btn = document.createElement("button");
@@ -91,11 +101,6 @@ function renderCalendarMenu(cellData, fullDate, container) {
 	const btn = document.createElement('button');
 	btn.className = 'cal-btn';
 	btn.innerHTML = '📅';
-	// Opciono: dodaj klik handler ako ne želiš samo CSS hover
-	btn.onclick = (e) => {
-            e.stopPropagation();
-            menu.classList.toggle('show');
-	};
 
 	// Kreiranje menija
 	const menu = document.createElement('div');
@@ -155,16 +160,17 @@ export const CellRenderers = {
         const { topBar, left, right } = createTopBar();
 
         // cancel dugme (ako korisnik ima prava)
-	const btn = renderCancelBtn(right, cellData.username, ctx, () => ctx.onDelete(cellData.id));
+	const btn = renderCancelBtn(left, cellData.username, ctx, () => ctx.onDelete(cellData.id));
 
         // dugme za integraciju sa kalendarima
         const calWrap = document.createElement("div");
-        renderCalendarMenu(cellData, date, calWrap);
-        left.appendChild(calWrap);
-
         const attendanceWrap = document.createElement("div");
-        renderAttendanceBtn(attendanceWrap, ctx, () => ctx.onOpenAttendance("reservation", cellData.id, date));
-        left.appendChild(attendanceWrap);
+        renderAttendanceBtn(attendanceWrap, cellData.username, ctx, () =>
+            ctx.onOpenAttendance("reservation", cellData.id, date)
+        );
+        right.appendChild(attendanceWrap);
+        renderCalendarMenu(cellData, date, calWrap);
+        right.appendChild(calWrap);
 
 	// opis rezervacije
         // izdvajamo samo deo pre '@' ako je u pitanju email adresa
@@ -186,7 +192,7 @@ export const CellRenderers = {
         td.classList.add("weekly");
 	td.innerHTML = "";
 
-	const card = document.createElement("div");
+        const card = document.createElement("div");
 	card.className = "res-card cell-content"; 
 	// moji časovi treba da budu malo drugačije prikazani
 	if (cellData.teacher_username === ctx.user)
@@ -196,13 +202,13 @@ export const CellRenderers = {
         const { topBar, left, right } = createTopBar();
 
         // dugme za otkazivanje/vraćanje časa
-        const btn = renderCancelBtn(right, cellData.teacher_username, ctx, () => 
+        const btn = renderCancelBtn(left, cellData.teacher_username, ctx, () => 
             ctx.onToggleWeekly(cellData.weekly_session_id, date)
         );
 
         // integracija sa kalendarom (samo ako čas nije otkazan)
         if (!cellData.canceled) {
-            const calWrap = document.createElement("div");
+        const calWrap = document.createElement("div");
             // Mapiramo podatke iz weekly u format koji renderCalendarMenu očekuje
             const calData = {
                 id: cellData.weekly_session_id,
@@ -212,17 +218,18 @@ export const CellRenderers = {
                 start: cellData.start,
                 end: cellData.end
             };
-            renderCalendarMenu(calData, date, calWrap);
-            left.appendChild(calWrap);
-        }
-
-        const attendanceWrap = document.createElement("div");
-        if (!cellData.canceled) {
-            renderAttendanceBtn(attendanceWrap, ctx, () =>
+            const attendanceWrap = document.createElement("div");
+            renderAttendanceBtn(attendanceWrap, cellData.teacher_username, ctx, () =>
                 ctx.onOpenAttendance("weekly", cellData.weekly_session_id, date)
             );
+            right.appendChild(attendanceWrap);
+            right.appendChild(calWrap);
+            renderCalendarMenu(calData, date, calWrap);
         }
-        left.appendChild(attendanceWrap);
+        else {
+            const attendanceWrap = document.createElement("div");
+            right.appendChild(attendanceWrap);
+        }
 
         // sadržaj ćelije
         const info = document.createElement("div");

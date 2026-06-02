@@ -58,7 +58,7 @@ def init_conflict_db(db_path):
         )
         conn.execute(
             "INSERT INTO courses (name, code) VALUES (?, ?)",
-            ("Algorithms", "ALG1"),
+            ("NumericalMethods", "ALG1"),
         )
         conn.execute(
             """

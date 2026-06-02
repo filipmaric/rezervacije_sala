@@ -27,12 +27,15 @@
 
     /* context meni */
     .context-menu {
-	position: absolute;
+	position: fixed;
 	background: #fff;
 	border: 1px solid #aaa;
-	z-index: 9999;
+	z-index: 100000;
 	display: none;
 	flex-direction: column;
+	min-width: 180px;
+	max-width: min(260px, calc(100vw - 16px));
+	box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15);
     }
     
     .context-menu div {
@@ -50,7 +53,7 @@
     .holiday { background-color: #f5b3b3; } /* praznici / izuzeci */
   </style>
   
-  <script src="{{ url_for('static', filename='calendar.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/calendar.js') }}?v=2"></script>
 </head>
 <body>
 <div>

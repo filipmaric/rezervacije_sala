@@ -1,6 +1,37 @@
 # Classroom Reservation System
 
+[![docs](https://github.com/filip/rezervacije_sala/actions/workflows/docs.yml/badge.svg)](https://github.com/filip/rezervacije_sala/actions/workflows/docs.yml)
+[![tests](https://github.com/filip/rezervacije_sala/actions/workflows/tests.yml/badge.svg)](https://github.com/filip/rezervacije_sala/actions/workflows/tests.yml)
+
 This repository contains a Flask app for room reservations, weekly timetable occupancy, and calendar management.
+
+## Documentation Site
+
+The repository includes a MkDocs-based documentation site in `docs/` with:
+
+- setup instructions,
+- deployment notes,
+- the attendance flow,
+- and module-level API docs generated from Python docstrings.
+
+The main entry points are:
+
+- [docs/index.md](/home/filip/Dropbox/prodekan/rezervacije_sala/docs/index.md) for the docs home page
+- [docs/api.md](/home/filip/Dropbox/prodekan/rezervacije_sala/docs/api.md) for the API index
+- [mkdocs.yml](/home/filip/Dropbox/prodekan/rezervacije_sala/mkdocs.yml) for the docs site configuration
+
+Build it with:
+
+```bash
+pip install mkdocs mkdocstrings[python]
+mkdocs serve
+```
+
+or:
+
+```bash
+mkdocs build
+```
 
 ## Setup After Clone
 

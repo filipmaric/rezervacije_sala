@@ -7,17 +7,21 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
 </head>
 <body>
-  <h1>Пријава присуства</h1>
+  <header class="attendance-page-header">
+    <h1>Пријава присуства</h1>
+  </header>
 
-  <div id="attendance-join-root"
-       data-kind="{{ attendance_kind }}"
-       data-event-id="{{ attendance_event_id }}"
-       data-event-date="{{ attendance_event_date }}">
-  </div>
+  <main class="page-shell student-attendance-shell">
+    <div id="attendance-join-root"
+         data-kind="{{ attendance_kind }}"
+         data-event-id="{{ attendance_event_id }}"
+         data-event-date="{{ attendance_event_date }}">
+    </div>
+  </main>
 
   <script>
     window.APP_CONFIG = {
-        BASE_PATH: "{{ url_for('index') }}".replace(/\/$/, "")
+        BASE_PATH: "{{ url_for('main.index') }}".replace(/\/$/, "")
     };
   </script>
   <script type="module" src="{{ url_for('static', filename='js/attendanceJoin.js') }}"></script>

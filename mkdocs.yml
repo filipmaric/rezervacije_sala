@@ -1,0 +1,35 @@
+site_name: Classroom Reservation System
+site_description: Documentation for the classroom reservation app
+site_url: ""
+theme:
+  name: mkdocs
+nav:
+  - Home: index.md
+  - Setup: setup.md
+  - Production: deployment.md
+  - Attendance: attendance.md
+  - API Reference:
+      - Overview: api.md
+      - auth: api/auth.md
+      - attendance: api/attendance.md
+      - occupancy: api/occupancy.md
+      - calendar_views: api/calendar_views.md
+      - semester: api/semester.md
+      - reservations: api/reservations.md
+      - reservations_views: api/reservations_views.md
+      - db: api/db.md
+      - config: api/config.md
+      - factory: api/factory.md
+      - main: api/main.md
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - .
+          options:
+            show_root_heading: true
+            show_source: false
+            show_root_toc_entry: false
+            show_signature: true

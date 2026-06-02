@@ -7,32 +7,36 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
 </head>
 <body>
-  <h1>Моје резервације</h1>
+  <header class="my-reservations-page-header">
+    <h1>Моје резервације</h1>
 
-  <p><a href="{{ url_for('index') }}">Назад на распоред</a></p>
+    <p><a href="{{ url_for('main.index') }}">Назад на распоред</a></p>
+  </header>
 
-  <p id="page-message"></p>
+  <main class="page-shell reservations-page-shell">
+    <p id="page-message"></p>
 
-  <div id="reservations-page" style="display:none">
-    <div class="semester-toolbar">
-      <label for="semester-select">Семестар:</label>
-      <select id="semester-select"></select>
+    <div id="reservations-page" style="display:none">
+      <div class="semester-toolbar">
+        <label for="semester-select">Семестар:</label>
+        <select id="semester-select"></select>
+      </div>
+
+      <section>
+        <h2>Личне резервације</h2>
+        <div id="personal-reservations"></div>
+      </section>
+
+      <section>
+        <h2>Предмети и недељни термини</h2>
+        <div id="course-reservations"></div>
+      </section>
     </div>
-
-    <section>
-      <h2>Личне резервације</h2>
-      <div id="personal-reservations"></div>
-    </section>
-
-    <section>
-      <h2>Предмети и недељни термини</h2>
-      <div id="course-reservations"></div>
-    </section>
-  </div>
+  </main>
 
   <script>
     window.APP_CONFIG = {
-        BASE_PATH: "{{ url_for('index') }}".replace(/\/$/, "")
+        BASE_PATH: "{{ url_for('main.index') }}".replace(/\/$/, "")
     };
   </script>
   <script type="module" src="{{ url_for('static', filename='js/myReservations.js') }}"></script>

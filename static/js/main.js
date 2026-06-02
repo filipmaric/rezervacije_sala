@@ -23,7 +23,7 @@ const AuthManager = {
                 this.elements.loginForm.style.display = "none";
                 this.elements.loginInfo.textContent = this.username;
                 this.elements.logoutForm.style.display = "inline-block";
-                this.elements.myReservationsLink.style.display = "inline-block";
+                this.elements.myReservationsWrap.style.display = "block";
             } else {
                 this.reset();
             }
@@ -39,7 +39,7 @@ const AuthManager = {
         this.elements.loginForm.style.display = "block";
         this.elements.logoutForm.style.display = "none";
         this.elements.loginInfo.textContent = "";
-        this.elements.myReservationsLink.style.display = "none";
+        this.elements.myReservationsWrap.style.display = "none";
     },
 
     async login(username, password, onSuccess) {
@@ -126,6 +126,7 @@ const TableManager = {
 
     createTable(locationRooms, data) {
         const table = document.createElement("table");
+        table.classList.add("occupancy-table");
         table.appendChild(this.createTableHeader(locationRooms));
 
         const tbody = document.createElement("tbody");
@@ -308,7 +309,7 @@ const App = {
             loginForm: document.getElementById("login-form"),
             loginInfo: document.getElementById("login-info"),
             logoutForm: document.getElementById("logout-form"),
-            myReservationsLink: document.getElementById("my-reservations-link")
+            myReservationsWrap: document.getElementById("my-reservations-wrap")
         });
 
 	// prikazujemo odgovarajuće elemente za login/logout

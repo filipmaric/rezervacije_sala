@@ -11,6 +11,16 @@ const DAY_NAMES = [
     'недеља',
 ];
 
+function formatCourseType(type) {
+    const normalized = String(type || '').toLowerCase();
+    const labels = {
+        p: 'предавања',
+        v: 'вежбе',
+        k: 'колоквијум',
+    };
+    return labels[normalized] || type || '';
+}
+
 function formatHourRange(start, end) {
     const pad = (value) => String(value).padStart(2, '0');
     return `${pad(start)}:00 - ${pad(end)}:00`;
@@ -22,6 +32,34 @@ function formatSemesterLabel(semester) {
 
 function clearNode(node) {
     node.textContent = '';
+}
+
+function escapeCsvValue(value) {
+    const text = String(value ?? '');
+    if (/[",\n;]/.test(text)) {
+        return `"${text.replace(/"/g, '""')}"`;
+    }
+    return text;
+}
+
+function buildAttendanceSummaryCsv(summaryEntries) {
+    const rows = [
+        ['Корисничко име', 'Име', 'Број присустава'],
+        ...summaryEntries.map((entry) => [entry.username, '', entry.count]),
+    ];
+    return '\ufeff' + rows.map((row) => row.map(escapeCsvValue).join(';')).join('\n');
+}
+
+function downloadTextFile(filename, content, mimeType = 'text/csv;charset=utf-8') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
 }
 
 function renderEmptyMessage(container, message) {
@@ -64,12 +102,24 @@ function ensureAttendanceDialog() {
 
     header.appendChild(titleWrap);
 
+    const actions = document.createElement('div');
+    actions.className = 'attendance-dialog-actions';
+
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
     closeButton.className = 'attendance-dialog-close';
     closeButton.textContent = 'Затвори';
     closeButton.addEventListener('click', () => dialog.close());
-    header.appendChild(closeButton);
+    actions.appendChild(closeButton);
+
+    const downloadButton = document.createElement('button');
+    downloadButton.type = 'button';
+    downloadButton.className = 'attendance-dialog-download';
+    downloadButton.textContent = 'Преузми CSV';
+    downloadButton.hidden = true;
+    actions.appendChild(downloadButton);
+
+    header.appendChild(actions);
 
     const body = document.createElement('div');
     body.id = 'attendance-dialog-body';
@@ -83,9 +133,28 @@ function ensureAttendanceDialog() {
 function openAttendanceDialog(date, students) {
     const dialog = ensureAttendanceDialog();
     const title = dialog.querySelector('#attendance-dialog-title');
+    const subtitle = dialog.querySelector('#attendance-dialog-subtitle');
     const body = dialog.querySelector('#attendance-dialog-body');
+    const downloadButton = dialog.querySelector('.attendance-dialog-download');
 
     title.textContent = `Присутност за ${formatDateDDMMYYYY(date)}`;
+    subtitle.textContent = '';
+    downloadButton.hidden = students.length === 0;
+    if (students.length > 0) {
+        downloadButton.textContent = 'Преузми CSV';
+        downloadButton.onclick = () => {
+            const csv = buildAttendanceSummaryCsv(
+                students.map((student) => ({
+                    username: student.username,
+                    count: 1,
+                }))
+            );
+            const safeDate = String(date).replace(/[^0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'datum';
+            downloadTextFile(`prisustvo_${safeDate}.csv`, csv);
+        };
+    } else {
+        downloadButton.onclick = null;
+    }
     clearNode(body);
 
     if (!students.length) {
@@ -112,9 +181,21 @@ function openAttendanceSummaryDialog(courseLabel, sessionLabel, summaryEntries) 
     const title = dialog.querySelector('#attendance-dialog-title');
     const subtitle = dialog.querySelector('#attendance-dialog-subtitle');
     const body = dialog.querySelector('#attendance-dialog-body');
+    const downloadButton = dialog.querySelector('.attendance-dialog-download');
 
     title.textContent = 'Сажетак присуства';
     subtitle.textContent = `${courseLabel} - ${sessionLabel}`;
+    downloadButton.hidden = summaryEntries.length === 0;
+    if (summaryEntries.length > 0) {
+        downloadButton.onclick = () => {
+            const csv = buildAttendanceSummaryCsv(summaryEntries);
+            const safeCourse = courseLabel.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '') || 'kurs';
+            const safeSession = sessionLabel.replace(/[^\p{L}\p{N}]+/gu, '_').replace(/^_+|_+$/g, '') || 'termin';
+            downloadTextFile(`sazetak_prisustva_${safeCourse}_${safeSession}.csv`, csv);
+        };
+    } else {
+        downloadButton.onclick = null;
+    }
     clearNode(body);
 
     if (!summaryEntries.length) {
@@ -290,7 +371,7 @@ async function renderCourseSessions(container, courses) {
                 DAY_NAMES[session.day_of_week] || '',
                 session.room_name,
                 formatHourRange(session.start_slot, session.end_slot),
-                session.course_type,
+                formatCourseType(session.course_type),
                 session.teacher_name,
                 session.groups.length ? session.groups.join(', ') : '',
             ];
@@ -324,6 +405,7 @@ async function renderCourseSessions(container, courses) {
                 DAY_NAMES[session.day_of_week] || '',
                 formatHourRange(session.start_slot, session.end_slot),
                 session.room_name,
+                formatCourseType(session.course_type),
             ].filter(Boolean).join(' · ');
             heading.textContent = sessionLabel;
             block.appendChild(heading);

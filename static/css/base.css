@@ -7,6 +7,23 @@ body {
     color: #333;
 }
 
+.page-shell {
+    width: min(100%, 1180px);
+    margin: 0 auto;
+}
+
+.teacher-page-shell {
+    width: min(100%, 880px);
+}
+
+.reservations-page-shell {
+    width: min(100%, 1040px);
+}
+
+.student-attendance-shell {
+    width: min(100%, 520px);
+}
+
 #auth-container { margin-bottom: 15px; }
 #login-info { margin: 0; padding: 0; font-weight: bold; }
 
@@ -26,8 +43,8 @@ body {
 .attendance-roster,
 .challenge-panel,
 .attendance-qr-box {
-    margin: 16px 0;
-    padding: 16px;
+    margin: 12px 0;
+    padding: 14px 16px;
     border: 1px solid #ddd;
     border-radius: 8px;
     background: #fafafa;
@@ -70,6 +87,72 @@ body {
     margin-bottom: 12px;
     width: 240px;
     height: 240px;
+}
+
+.teacher-page-shell .attendance-panel,
+.teacher-page-shell .attendance-roster,
+.teacher-page-shell .challenge-panel,
+.teacher-page-shell .attendance-qr-box {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.teacher-page-shell #attendance-root {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+
+.teacher-page-shell .attendance-panel,
+.teacher-page-shell .attendance-roster,
+.teacher-page-shell .challenge-panel,
+.teacher-page-shell .attendance-qr-box {
+    margin: 8px 0;
+    padding: 12px 14px;
+}
+
+.teacher-page-shell .attendance-qr-box {
+    align-items: center;
+    text-align: center;
+}
+
+.teacher-page-shell .attendance-qr-box a {
+    display: inline-block;
+}
+
+.teacher-page-shell .attendance-qr-box img {
+    cursor: pointer;
+}
+
+.reservations-page-shell #reservations-page {
+    width: 100%;
+}
+
+.attendance-page-header {
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.attendance-page-header h1 {
+    margin-bottom: 2px;
+}
+
+.attendance-page-header p {
+    margin: 0;
+}
+
+.my-reservations-page-header {
+    text-align: center;
+    margin-bottom: 8px;
+}
+
+.my-reservations-page-header h1 {
+    margin-bottom: 2px;
+}
+
+.my-reservations-page-header p {
+    margin: 0;
 }
 
 .attendance-code {
@@ -259,7 +342,85 @@ body {
     font-size: 0.95rem;
 }
 
+.attendance-dialog-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.student-attendance-shell #attendance-join-root {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.student-attendance-shell .attendance-panel,
+.student-attendance-shell .challenge-panel {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.student-attendance-shell .challenge-panel {
+    max-width: 100%;
+}
+
+.student-attendance-shell .challenge-panel h2 {
+    margin: 0 0 10px;
+    text-align: center;
+}
+
+.student-attendance-shell .challenge-panel input {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0 0 8px;
+    padding: 12px 14px;
+}
+
+.student-attendance-shell .challenge-panel input + input {
+    margin-top: 2px;
+}
+
+.student-attendance-shell .challenge-options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 6px 0 8px;
+}
+
+.student-attendance-shell .challenge-option-btn {
+    width: 100%;
+    min-width: 0;
+}
+
+@media (max-width: 560px) {
+    body {
+        margin: 12px;
+    }
+
+    .student-attendance-shell {
+        width: 100%;
+    }
+
+    .student-attendance-shell .challenge-options {
+        grid-template-columns: 1fr;
+    }
+
+    .student-attendance-shell .challenge-option-btn {
+        min-height: 58px;
+        font-size: 1.05rem;
+    }
+
+    .student-attendance-shell .challenge-panel input {
+        padding: 11px 13px;
+    }
+}
+
 .attendance-dialog-close {
+    white-space: nowrap;
+}
+
+.attendance-dialog-download {
     white-space: nowrap;
 }
 
@@ -271,9 +432,22 @@ body {
 /* ==========================================================================
    2. TABELA I LAYOUT
    ========================================================================== */
-table { 
-    border-collapse: collapse; 
-    margin-top: 10px; 
+table {
+    border-collapse: collapse;
+    margin-top: 10px;
+}
+
+table.occupancy-table {
+    width: auto;
+    margin-left: auto;
+    margin-right: auto;
+    table-layout: fixed;
+}
+
+.reservations-page-shell table,
+.student-attendance-shell table,
+.attendance-dialog table {
+    width: 100%;
 }
 
 th { 
@@ -282,7 +456,7 @@ th {
     font-weight: bold;
     padding: 5px 10px;
     vertical-align: middle;
-    width: 150px;
+    width: auto;
 }
 
 td {
@@ -302,6 +476,17 @@ th.time {
     height: 100px;
 }
 
+table.occupancy-table th,
+table.occupancy-table td {
+    word-break: break-word;
+    width: 120px;
+    overflow: visible;
+}
+
+table.occupancy-table th.time {
+    width: 100px;
+}
+
 /* Onemogući selekciju teksta tokom drag-a */
 table {
     user-select: none;
@@ -314,6 +499,10 @@ table {
 .empty-slot { background-color: #fff; }
 .weekly     { background-color: #eee; }
 .reservation { background-color: #99ccff; }
+table.occupancy-table td.reservation {
+    overflow: visible !important;
+    position: relative;
+}
 
 .selected {
     background-color: #d0ebff !important;
@@ -338,6 +527,7 @@ table {
     padding: 6px;
     box-sizing: border-box;
     position: relative;
+    overflow: visible;
 }
 
 .res-top-bar {
@@ -424,32 +614,41 @@ span.room { color: #333; font-size: 12px; }
 }
 .res-cancel-btn:hover { background: #fee; }
 
-.calendar-dropdown { position: relative; }
+.calendar-dropdown {
+    position: relative;
+}
 .cal-btn {
-    background: transparent;
-    border: none;
-    font-size: 1.1rem;
+    background: transparent !important;
+    border: none !important;
+    font-size: 1.2rem !important;
+    padding: 0 !important;
     cursor: pointer;
-    padding: 0 4px;
+    outline: none;
+    transition: transform 0.2s ease;
 }
 
 .cal-menu { 
     display: none; 
     position: absolute; 
-    right: 0; /* Da ne izlazi van ekrana desno */
+    right: 0;
+    top: 100%;
+    margin-top: 0;
     background: white; 
-    border: 1px solid #ddd; 
-    z-index: 1000;
-    min-width: 160px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    border: 1px solid #ccc;
+    z-index: 100;
+    min-width: 150px;
+    box-shadow: 2px 2px 10px rgba(0,0,0,0.1);
+}
+.calendar-dropdown:hover .cal-btn {
+    transform: scale(1.2);
 }
 .calendar-dropdown:hover .cal-menu { display: block; }
 .cal-menu a { 
     display: block; 
-    padding: 10px; 
+    padding: 8px; 
     text-decoration: none; 
-    color: #444; 
-    font-size: 13px;
+    color: #333; 
+    font-size: 14px;
     border-bottom: 1px solid #eee;
 }
 .cal-menu a:last-child { border-bottom: none; }

@@ -3,7 +3,7 @@ import app as myapp
 
 def test_occupancy_reservation(client, db):
 
-    room_id = db.room("A1")
+    room_id = db.room("R1")
 
     db.reservation(
         room_id=room_id,
@@ -31,9 +31,9 @@ def test_occupancy_missing_date(client):
     assert r.status_code == 400
 
 def test_weekly_session(client, db):
-    room = db.room("A1")
+    room = db.room("R1")
     teacher = db.teacher("Prof", "prof")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     semester = db.semester()
 
     session = db.course_session(course, teacher, semester)
@@ -56,9 +56,9 @@ def test_weekly_lecture(client, db):
     schedule = db.schedule()
 
     schedule.lecture(
-        course="Algorithms",
+        course="NumericalMethods",
         teacher="Prof",
-        room="A1",
+        room="R1",
         day=1,
         start=2,
         end=4
@@ -75,7 +75,7 @@ def test_weekly_lecture(client, db):
 def test_multiple_rooms(client, db):
     s = db.schedule()
 
-    s.lecture("Algorithms", teacher="Prof1", room="A1", day=1, start=2, end=4)
+    s.lecture("NumericalMethods", teacher="Prof1", room="R1", day=1, start=2, end=4)
     s.lecture("Databases", teacher="Prof2", room="A2", day=1, start=3, end=5)
 
     r = client.get("/occupancy?date=2026-03-09")
@@ -87,9 +87,9 @@ def test_multiple_rooms(client, db):
 def test_canceled_class(client, db):
     s = db.schedule()
 
-    room = s.room("A1")
+    room = s.room("R1")
 
-    s.lecture("Algorithms", teacher="Prof", room="A1", day=1, start=2, end=4)
+    s.lecture("NumericalMethods", teacher="Prof", room="R1", day=1, start=2, end=4)
 
     db.execute(
         """INSERT INTO weekly_cancellations
@@ -109,18 +109,18 @@ def test_canceled_class(client, db):
 def test_weekly_session_outside_semester_is_hidden(client, db):
     schedule = db.schedule()
 
-    schedule.room("A1")
+    schedule.room("R1")
     schedule.teacher("Prof", "prof")
-    schedule.course("Algorithms")
+    schedule.course("NumericalMethods")
     past_semester = db.semester(name="Past 2025", start="2025-01-01", end="2025-12-31")
     session = db.course_session(
-        schedule.courses["Algorithms"],
+        schedule.courses["NumericalMethods"],
         schedule.teachers["Prof"],
         past_semester,
     )
     db.weekly_session(
         session_id=session,
-        room_id=schedule.rooms["A1"],
+        room_id=schedule.rooms["R1"],
         day_of_week=1,
         start_slot=2,
         end_slot=4,

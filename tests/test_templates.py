@@ -32,9 +32,9 @@ def test_attendance_templates(client, db):
         start="2026-01-01",
         end="2026-12-31",
     )
-    room = db.room("A1")
+    room = db.room("R1")
     teacher = db.teacher("Prof", "alice")
-    course = db.course("Algorithms")
+    course = db.course("NumericalMethods")
     session = db.course_session(course, teacher, semester)
     weekly_session_id = db.weekly_session(
         session_id=session,
