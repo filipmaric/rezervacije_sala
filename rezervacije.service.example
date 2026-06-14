@@ -1,0 +1,15 @@
+[Unit]
+Description=Gunicorn za Flask aplikaciju rezervacije sala
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/rezervacije
+Environment="PATH=/var/www/rezervacije/venv/bin"
+EnvironmentFile=/var/www/rezervacije/rezervacije.env
+ExecStart=/var/www/rezervacije/venv/bin/gunicorn -b 127.0.0.1:5000 wsgi:application
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

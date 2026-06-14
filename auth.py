@@ -193,6 +193,11 @@ def load_user(user_id):
 # RADIUS authentication helpers.
 
 
+def normalize_teacher_username(username):
+    """Strip an email domain so teachers can log in with username or email."""
+    return (username or "").strip().split("@", 1)[0]
+
+
 def radius_auth_mock(username, password):
     """Local development fallback that accepts any non-empty username."""
     return bool(username)
@@ -200,6 +205,7 @@ def radius_auth_mock(username, password):
 
 def radius_auth(username, password):
     """Authenticate a teacher against the configured teacher RADIUS backend."""
+    username = normalize_teacher_username(username)
     if TEACHER_AUTH_BACKEND != "radius":
         return radius_auth_mock(username, password)
 
@@ -251,6 +257,7 @@ def student_radius_auth(username, password):
 
 def login_user_from_credentials(username, password):
     """Authenticate a teacher and create a browser session."""
+    username = normalize_teacher_username(username)
     if radius_auth(username, password):
         user = User(username)
         login_user(user)

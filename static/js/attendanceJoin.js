@@ -8,6 +8,7 @@ let expiredShown = false;
 let frozenUntilBucket = null;
 let currentChallengeBucket = null;
 let freezeCountdownHandle = null;
+let freezeMessageText = '';
 
 const CHALLENGE_ROUND_MS = 10000;
 
@@ -41,7 +42,7 @@ function updateFreezeCountdown(root) {
     if (freezeNotice) {
         freezeNotice.hidden = secondsLeft <= 0;
         freezeNotice.textContent = secondsLeft > 0
-            ? `Погрешан број. Сачекајте нови круг за ${secondsLeft} секунди.`
+            ? `${freezeMessageText || 'Погрешан број. Сачекајте нови круг.'} За нови круг још ${secondsLeft} секунди.`
             : '';
     }
 
@@ -68,6 +69,62 @@ function updateFreezeCountdown(root) {
     }
 }
 
+function captureFormState(root) {
+    const activeElement = document.activeElement;
+    const activeField = activeElement && (activeElement.id === 'attendance-username' || activeElement.id === 'attendance-password')
+        ? activeElement.id
+        : '';
+    const freezeNotice = root.querySelector('#attendance-freeze-notice');
+    return {
+        username: root.querySelector('#attendance-username')?.value || '',
+        password: root.querySelector('#attendance-password')?.value || '',
+        message: root.querySelector('#attendance-message')?.textContent || '',
+        freezeVisible: freezeNotice ? !freezeNotice.hidden : false,
+        activeField,
+        selectionStart: activeField ? activeElement.selectionStart : null,
+        selectionEnd: activeField ? activeElement.selectionEnd : null,
+    };
+}
+
+function restoreFormState(root, state) {
+    if (!state) {
+        return;
+    }
+
+    const username = root.querySelector('#attendance-username');
+    const password = root.querySelector('#attendance-password');
+    const message = root.querySelector('#attendance-message');
+    const freezeNotice = root.querySelector('#attendance-freeze-notice');
+
+    if (username) {
+        username.value = state.username || '';
+    }
+    if (password) {
+        password.value = state.password || '';
+    }
+    if (message && state.message) {
+        message.textContent = state.message;
+    }
+    if (freezeNotice) {
+        freezeNotice.hidden = !state.freezeVisible;
+        freezeNotice.textContent = state.freezeVisible
+            ? `${freezeMessageText || 'Погрешан број. Сачекајте нови круг.'}`
+            : '';
+    }
+
+    const field = state.activeField === 'attendance-password' ? password : username;
+    if (field) {
+        field.focus();
+        if (typeof state.selectionStart === 'number' && typeof state.selectionEnd === 'number') {
+            try {
+                field.setSelectionRange(state.selectionStart, state.selectionEnd);
+            } catch (err) {
+                // Some browsers may not support selection APIs on this input.
+            }
+        }
+    }
+}
+
 function renderChallenge(root, data, state = {}) {
     const existing = root.querySelector('.challenge-panel');
     if (existing) existing.remove();
@@ -84,13 +141,25 @@ function renderChallenge(root, data, state = {}) {
     title.textContent = 'Потврдa присуства';
     panel.appendChild(title);
 
+    const form = document.createElement('form');
+    form.autocomplete = 'off';
+    form.setAttribute('autocomplete', 'off');
+    form.setAttribute('autocapitalize', 'off');
+    form.setAttribute('autocorrect', 'off');
+    form.addEventListener('submit', (event) => event.preventDefault());
+
     const username = document.createElement('input');
     username.type = 'text';
     username.id = 'attendance-username';
     username.placeholder = 'Корисничко име';
     username.required = true;
     username.value = state.username || '';
-    panel.appendChild(username);
+    username.autocomplete = 'off';
+    username.setAttribute('autocomplete', 'off');
+    username.setAttribute('autocapitalize', 'off');
+    username.setAttribute('autocorrect', 'off');
+    username.setAttribute('spellcheck', 'false');
+    form.appendChild(username);
 
     const password = document.createElement('input');
     password.type = 'password';
@@ -98,7 +167,14 @@ function renderChallenge(root, data, state = {}) {
     password.placeholder = 'Лозинка';
     password.required = true;
     password.value = state.password || '';
-    panel.appendChild(password);
+    // Browsers often ignore autocomplete="off" on password fields, so use the
+    // standard "new-password" hint to discourage saved password suggestions.
+    password.autocomplete = 'new-password';
+    password.setAttribute('autocomplete', 'new-password');
+    password.setAttribute('autocapitalize', 'off');
+    password.setAttribute('autocorrect', 'off');
+    password.setAttribute('spellcheck', 'false');
+    form.appendChild(password);
 
     const choices = document.createElement('div');
     choices.className = 'challenge-options';
@@ -154,6 +230,12 @@ function renderChallenge(root, data, state = {}) {
                 }
                 if (err.status === 409) {
                     frozenUntilBucket = currentChallengeBucket;
+                    freezeMessageText = err.data?.error || err.message || 'Погрешан број. Сачекајте нови круг.';
+                    const freezeNotice = root.querySelector('#attendance-freeze-notice');
+                    if (freezeNotice) {
+                        freezeNotice.textContent = freezeMessageText;
+                        freezeNotice.hidden = false;
+                    }
                     clearFreezeCountdown();
                     updateFreezeCountdown(root);
                     freezeCountdownHandle = setInterval(() => updateFreezeCountdown(root), 1000);
@@ -164,18 +246,23 @@ function renderChallenge(root, data, state = {}) {
         });
         choices.appendChild(button);
     });
-    panel.appendChild(choices);
+    form.appendChild(choices);
+    panel.appendChild(form);
 
     const freezeNotice = document.createElement('p');
     freezeNotice.id = 'attendance-freeze-notice';
     freezeNotice.className = 'attendance-freeze-notice';
     freezeNotice.hidden = true;
+    freezeNotice.textContent = state.freezeMessage || '';
     panel.appendChild(freezeNotice);
 
     const message = document.createElement('p');
     message.id = 'attendance-message';
+    message.textContent = state.message || '';
     panel.appendChild(message);
     root.appendChild(panel);
+
+    restoreFormState(root, state);
 }
 
 function renderEventInfo(root, event) {
@@ -208,6 +295,7 @@ function showBlockedState(root) {
     blockedShown = true;
     expiredShown = false;
     frozenUntilBucket = null;
+    freezeMessageText = '';
     clearFreezeCountdown();
     if (pollHandle) {
         clearInterval(pollHandle);
@@ -233,6 +321,7 @@ function showSessionExpiredState(root) {
     expiredShown = true;
     blockedShown = false;
     frozenUntilBucket = null;
+    freezeMessageText = '';
     clearFreezeCountdown();
     if (pollHandle) {
         clearInterval(pollHandle);
@@ -261,8 +350,7 @@ async function refresh(root) {
     if (frozenUntilBucket !== null) {
         return;
     }
-    const existingUsername = root.querySelector('#attendance-username')?.value || '';
-    const existingPassword = root.querySelector('#attendance-password')?.value || '';
+    const state = captureFormState(root);
     const data = await API.getAttendanceChallenge(
         root.dataset.kind,
         root.dataset.eventId,
@@ -270,10 +358,7 @@ async function refresh(root) {
     );
     root.innerHTML = '';
     renderEventInfo(root, data.event);
-    renderChallenge(root, data, {
-        username: existingUsername,
-        password: existingPassword,
-    });
+    renderChallenge(root, data, state);
 }
 
 const App = {

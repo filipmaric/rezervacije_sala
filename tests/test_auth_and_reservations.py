@@ -35,6 +35,16 @@ def test_login_logout_and_whoami(client):
     assert r.get_json() == {"logged_in": False}
 
 
+def test_login_accepts_teacher_email_username(client):
+    r = login(client, "alice@example.edu")
+    data = r.get_json()
+    assert r.status_code == 200
+    assert data["username"] == "alice"
+
+    r = client.get("/whoami")
+    assert r.get_json() == {"logged_in": True, "username": "alice"}
+
+
 def test_login_failure(client, monkeypatch):
     monkeypatch.setattr(authmod, "radius_auth", lambda username, password: False)
 
