@@ -290,8 +290,8 @@ def test_attendance_blocked_outside_class_window(client, db, monkeypatch):
     monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: False)
 
     roster = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/data")
-    assert roster.status_code == 403
-    assert roster.get_json()["error"] == "Пријава присуства је могућа само током часа."
+    assert roster.status_code == 200
+    assert roster.get_json()["attendance_open"] is False
 
     challenge = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/challenge")
     assert challenge.status_code == 403

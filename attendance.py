@@ -651,16 +651,22 @@ def attendance_roster_data(kind, event_id, event_date):
         return jsonify({'error': 'event not found'}), 404
     if not attendance_can_view(kind, row):
         return jsonify({'error': 'Forbidden'}), 403
-    if not attendance_is_open_now(row):
-        return jsonify({'error': attendance_not_open_message()}), 403
 
-    challenge = attendance_challenge_for_time(kind, event_id, event_date)
+    open_now = attendance_is_open_now(row)
+
     return jsonify({
         'event': row,
-        'challenge': challenge,
-        'join_token': attendance_join_token(kind, event_id, event_date),
         'students': attendance_records_for_event(kind, event_id, event_date),
         'can_view': True,
+        'attendance_open': open_now,
+        **(
+            {
+                'challenge': attendance_challenge_for_time(kind, event_id, event_date),
+                'join_token': attendance_join_token(kind, event_id, event_date),
+            }
+            if open_now
+            else {}
+        ),
     })
 
 

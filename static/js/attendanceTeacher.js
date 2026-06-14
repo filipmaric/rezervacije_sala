@@ -137,6 +137,11 @@ async function refresh(root) {
 
     renderEventInfo(root, data.event);
 
+    if (!data.attendance_open) {
+        showAccessMessage(root, 'Пријава присуства је могућа само током часа.');
+        return;
+    }
+
     const joinUrl = buildJoinUrl(kind, eventId, eventDate, data.join_token);
     renderQr(root, joinUrl);
     renderChallenge(root, data.challenge, data.event);
