@@ -9,6 +9,7 @@ let frozenUntilBucket = null;
 let currentChallengeBucket = null;
 let freezeCountdownHandle = null;
 let freezeMessageText = '';
+let outsideClassShown = false;
 
 const CHALLENGE_ROUND_MS = 10000;
 
@@ -21,6 +22,34 @@ function clearFreezeCountdown() {
         clearInterval(freezeCountdownHandle);
         freezeCountdownHandle = null;
     }
+}
+
+function showOutsideClassState(root, messageText) {
+    outsideClassShown = true;
+    successShown = false;
+    blockedShown = false;
+    expiredShown = false;
+    frozenUntilBucket = null;
+    freezeMessageText = '';
+    clearFreezeCountdown();
+    if (pollHandle) {
+        clearInterval(pollHandle);
+        pollHandle = null;
+    }
+    root.innerHTML = '';
+
+    const panel = document.createElement('div');
+    panel.className = 'attendance-panel attendance-blocked-panel';
+
+    const title = document.createElement('h2');
+    title.textContent = 'Пријава присуства је могућа само током часа';
+    panel.appendChild(title);
+
+    const note = document.createElement('p');
+    note.textContent = messageText || 'Поново покушајте током трајања часа.';
+    panel.appendChild(note);
+
+    root.appendChild(panel);
 }
 
 function updateFreezeCountdown(root) {
@@ -56,6 +85,10 @@ function updateFreezeCountdown(root) {
         refresh(root).catch((err) => {
             if (err.status === 403) {
                 const errorText = err.data?.error || err.message || '';
+                if (errorText.includes('само током часа')) {
+                    showOutsideClassState(root, errorText);
+                    return;
+                }
                 if (errorText.includes('истекла')) {
                     showSessionExpiredState(root);
                 } else {
@@ -221,6 +254,10 @@ function renderChallenge(root, data, state = {}) {
             } catch (err) {
                 if (err.status === 403) {
                     const errorText = err.data?.error || err.message || '';
+                    if (errorText.includes('само током часа')) {
+                        showOutsideClassState(root, errorText);
+                        return;
+                    }
                     if (errorText.includes('истекла')) {
                         showSessionExpiredState(root);
                     } else {
@@ -368,7 +405,7 @@ const App = {
         try {
             await refresh(root);
             pollHandle = setInterval(async () => {
-                if (frozenUntilBucket !== null) {
+                if (frozenUntilBucket !== null || outsideClassShown) {
                     return;
                 }
                 try {
@@ -376,6 +413,10 @@ const App = {
                 } catch (err) {
                     if (err.status === 403) {
                         const errorText = err.data?.error || err.message || '';
+                        if (errorText.includes('само током часа')) {
+                            showOutsideClassState(root, errorText);
+                            return;
+                        }
                         if (errorText.includes('истекла')) {
                             showSessionExpiredState(root);
                         } else {
@@ -390,6 +431,10 @@ const App = {
         } catch (err) {
             if (err.status === 403) {
                 const errorText = err.data?.error || err.message || '';
+                if (errorText.includes('само током часа')) {
+                    showOutsideClassState(root, errorText);
+                    return;
+                }
                 if (errorText.includes('истекла')) {
                     showSessionExpiredState(root);
                 } else {

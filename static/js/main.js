@@ -195,6 +195,8 @@ const TableManager = {
         }
 
         const td = document.createElement("td");
+        td.dataset.room_id = room_id;
+        td.dataset.hour = hour;
         const ctx = {
             user: AuthManager.username,
             isAdmin: AuthManager.isAdmin,
@@ -257,14 +259,38 @@ const DragAndDropManager = {
                 this.dragStart = slot;
                 this.dragRoom = slot.dataset.room_id;
                 slot.classList.add("selected");
+                this.updateDragTail();
             };
             slot.onmouseenter = () => {
                 if (this.isDragging && slot.dataset.room_id === this.dragRoom) {
                     slot.classList.add("selected");
+                    this.updateDragTail();
                 }
             };
             slot.onmouseup = () => this.handleMouseUp();
         });
+    },
+
+    updateDragTail() {
+        this.container.querySelectorAll(".empty-slot.drag-tail").forEach(el => {
+            el.classList.remove("drag-tail");
+        });
+
+        const selected = Array.from(this.container.querySelectorAll(".empty-slot.selected"));
+        if (!selected.length) {
+            return;
+        }
+
+        const roomId = selected[0].dataset.room_id;
+        const sameRoom = selected.filter(slot => slot.dataset.room_id === roomId);
+        if (!sameRoom.length) {
+            return;
+        }
+
+        const bottomMost = sameRoom.reduce((best, slot) => {
+            return parseInt(slot.dataset.hour) > parseInt(best.dataset.hour) ? slot : best;
+        });
+        bottomMost.classList.add("drag-tail");
     },
 
     async handleMouseUp() {
@@ -273,6 +299,9 @@ const DragAndDropManager = {
 
         const selected = Array.from(this.container.querySelectorAll(".empty-slot.selected"));
         selected.forEach(el => el.classList.remove("selected"));
+        this.container.querySelectorAll(".empty-slot.drag-tail").forEach(el => {
+            el.classList.remove("drag-tail");
+        });
 
         if (!selected.length) return;
 
@@ -303,6 +332,8 @@ const DragAndDropManager = {
 
 
 const App = {
+    refreshTimer: null,
+
     async init() {
         // inicijalizacija AuthManagera sa UI elementima
         AuthManager.init({
@@ -334,8 +365,13 @@ const App = {
 	// povezujemo UI sa događajima
         this.setupEvents();
 
-	// osvežavamo prikaz tabele
+        // osvežavamo prikaz tabele
         this.refresh();
+        // Povremeno osvežavamo prikaz da bi se QR dugme pojavilo/nestalo
+        // kada čas uđe u dozvoljeni vremenski prozor.
+        this.refreshTimer = setInterval(() => {
+            this.refresh().catch((err) => console.error("Auto-refresh error:", err));
+        }, 5 * 60 * 1000);
     },
 
     // učitavamo i prikazujemo podatke za odabrani datum
@@ -345,8 +381,27 @@ const App = {
 	// učitavamo podatke i prikazujemo ih
         const data = await API.getOccupancy(date);
         TableManager.render(data);
+        this.scrollToRequestedSlot();
 	// ako je korisnik ulogovan, uključujemo rezervacije pomoću drag & drop
         if (AuthManager.isLoggedIn()) DragAndDropManager.setupHandlers();
+    },
+
+    scrollToRequestedSlot() {
+        const params = new URLSearchParams(window.location.search);
+        const roomId = params.get('room_id');
+        const hour = params.get('hour');
+        if (!roomId || !hour) {
+            return;
+        }
+
+        const selector = `td[data-room_id="${roomId}"][data-hour="${hour}"]`;
+        const target = document.querySelector(selector);
+        if (!target) {
+            return;
+        }
+
+        target.classList.add('slot-highlight');
+        target.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
     },
 
     // povezujemo UI sa događajima

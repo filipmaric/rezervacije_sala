@@ -26,6 +26,16 @@ function formatHourRange(start, end) {
     return `${pad(start)}:00 - ${pad(end)}:00`;
 }
 
+function buildMainTimetableUrl(date, roomId = null, hour = null) {
+    const basePath = window.APP_CONFIG?.BASE_PATH || '';
+    const params = new URLSearchParams({ date });
+    if (roomId !== null && roomId !== undefined && hour !== null && hour !== undefined) {
+        params.set('room_id', String(roomId));
+        params.set('hour', String(hour));
+    }
+    return `${basePath}/?${params.toString()}`;
+}
+
 function formatSemesterLabel(semester) {
     return `${semester.name} (${formatDateDDMMYYYY(semester.start_date)} - ${formatDateDDMMYYYY(semester.end_date)})`;
 }
@@ -261,15 +271,27 @@ function renderPersonalReservations(container, reservations) {
         const tr = document.createElement('tr');
 
         const cells = [
-            formatDateDDMMYYYY(reservation.date),
+            {
+                value: formatDateDDMMYYYY(reservation.date),
+                href: buildMainTimetableUrl(reservation.date, reservation.room_id, reservation.start_slot),
+                className: 'reservation-date-link',
+            },
             reservation.room_name,
             formatHourRange(reservation.start_slot, reservation.end_slot),
             reservation.description || '',
         ];
 
-        cells.forEach((value) => {
+        cells.forEach((value, index) => {
             const td = document.createElement('td');
-            td.textContent = value;
+            if (index === 0) {
+                const link = document.createElement('a');
+                link.href = value.href;
+                link.className = value.className || '';
+                link.textContent = value.value;
+                td.appendChild(link);
+            } else {
+                td.textContent = value;
+            }
             tr.appendChild(td);
         });
 
@@ -310,7 +332,11 @@ async function renderPersonalAttendanceSummary(container, reservations) {
 
         const dateLabel = document.createElement('span');
         dateLabel.className = 'attendance-summary-date';
-        dateLabel.textContent = formatDateDDMMYYYY(entry.reservation.date);
+        const dateLink = document.createElement('a');
+        dateLink.href = buildMainTimetableUrl(entry.reservation.date, entry.reservation.room_id, entry.reservation.start_slot);
+        dateLink.className = 'attendance-date-link';
+        dateLink.textContent = formatDateDDMMYYYY(entry.reservation.date);
+        dateLabel.appendChild(dateLink);
         item.appendChild(dateLabel);
 
         const roomLabel = document.createElement('span');
@@ -466,7 +492,11 @@ async function renderCourseSessions(container, courses) {
 
                 const dateLabel = document.createElement('span');
                 dateLabel.className = 'attendance-summary-date';
-                dateLabel.textContent = formatDateDDMMYYYY(entry.date);
+                const dateLink = document.createElement('a');
+                dateLink.href = buildMainTimetableUrl(entry.date, session.room_id, session.start_slot);
+                dateLink.className = 'attendance-date-link';
+                dateLink.textContent = formatDateDDMMYYYY(entry.date);
+                dateLabel.appendChild(dateLink);
                 item.appendChild(dateLabel);
 
                 const countLabel = document.createElement('span');

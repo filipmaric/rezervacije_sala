@@ -4,6 +4,7 @@ import datetime
 
 from flask import Blueprint, abort, jsonify, request
 
+from attendance import attendance_is_open_now
 from db import query_db
 
 
@@ -151,6 +152,13 @@ def occupancy():
                     "room": r["room"],
                     "groups": r["groups"].split(",") if r["groups"] else [],
                     "canceled": bool(r["is_canceled"]),
+                    "attendance_open": attendance_is_open_now(
+                        {
+                            "event_date": date,
+                            "start_slot": r["start_slot"],
+                            "end_slot": r["end_slot"],
+                        }
+                    ) and not bool(r["is_canceled"]),
                 }
             )
 
@@ -170,6 +178,13 @@ def occupancy():
                 "description": r["description"],
                 "username": r["username"],
                 "room": r["room"],
+                "attendance_open": attendance_is_open_now(
+                    {
+                        "reservation_date": date,
+                        "start_slot": r["start_slot"],
+                        "end_slot": r["end_slot"],
+                    }
+                ),
             }
         )
 

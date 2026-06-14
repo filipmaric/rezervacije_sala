@@ -10,6 +10,7 @@ from flask import Blueprint, abort, jsonify, make_response, redirect, render_tem
 from flask_login import current_user
 from config import (
     ATTENDANCE_CHALLENGE_TTL,
+    ATTENDANCE_CLASS_GRACE_MINUTES,
     ATTENDANCE_JOIN_TOKEN_TTL,
     ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS,
     ATTENDANCE_SECRET,
@@ -196,6 +197,43 @@ def attendance_can_view(kind, row):
     if kind == "weekly":
         return current_user.username == row["teacher_username"]
     return current_user.username == row["owner_username"]
+
+
+def attendance_event_window(row):
+    """Return the allowed attendance window for one lecture or reservation."""
+    event_date = row.get("event_date") or row.get("reservation_date")
+    if not event_date:
+        return None
+
+    start_slot = row.get("start_slot")
+    end_slot = row.get("end_slot")
+    if start_slot is None or end_slot is None:
+        return None
+
+    try:
+        day = datetime.datetime.strptime(event_date, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+    start_dt = datetime.datetime.combine(day, datetime.time(hour=int(start_slot)))
+    end_dt = datetime.datetime.combine(day, datetime.time(hour=int(end_slot)))
+    grace = datetime.timedelta(minutes=ATTENDANCE_CLASS_GRACE_MINUTES)
+    return (start_dt - grace, end_dt + grace)
+
+
+def attendance_is_open_now(row, now=None):
+    """Return True when the current time is inside the allowed attendance window."""
+    window = attendance_event_window(row)
+    if not window:
+        return False
+    now = now or datetime.datetime.now()
+    window_start, window_end = window
+    return window_start <= now <= window_end
+
+
+def attendance_not_open_message():
+    """Return the message shown when attendance is accessed outside class time."""
+    return "Пријава присуства је могућа само током часа."
 
 
 # Attendance record helpers.
@@ -554,6 +592,11 @@ def attendance_join_view_token(kind, event_id, event_date, token):
     attendance_cleanup_expired_failures()
     if not attendance_kind_valid(kind):
         abort(404)
+    row = attendance_event_row(kind, event_id, event_date)
+    if not row:
+        return jsonify({"error": "event not found"}), 404
+    if not attendance_is_open_now(row):
+        return jsonify({"error": attendance_not_open_message()}), 403
     if not attendance_token_is_valid(kind, event_id, event_date, token):
         abort(404)
     response = make_response(
@@ -580,6 +623,8 @@ def attendance_challenge_data(kind, event_id, event_date):
         return jsonify({'error': 'event not found'}), 404
     if kind == 'weekly' and bool(row.get('is_canceled')):
         return jsonify({'error': 'this lecture occurrence is canceled'}), 409
+    if not attendance_is_open_now(row):
+        return jsonify({'error': attendance_not_open_message()}), 403
     session_status = attendance_session_status(kind, event_id, event_date)
     if session_status == "blocked":
         return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
@@ -606,6 +651,8 @@ def attendance_roster_data(kind, event_id, event_date):
         return jsonify({'error': 'event not found'}), 404
     if not attendance_can_view(kind, row):
         return jsonify({'error': 'Forbidden'}), 403
+    if not attendance_is_open_now(row):
+        return jsonify({'error': attendance_not_open_message()}), 403
 
     challenge = attendance_challenge_for_time(kind, event_id, event_date)
     return jsonify({
@@ -634,6 +681,8 @@ def attendance_join_submit(kind, event_id, event_date):
         return jsonify({'error': 'event not found'}), 404
     if kind == 'weekly' and bool(row.get('is_canceled')):
         return jsonify({'error': 'this lecture occurrence is canceled'}), 409
+    if not attendance_is_open_now(row):
+        return jsonify({'error': attendance_not_open_message()}), 403
     session_token = attendance_session_from_request(kind, event_id, event_date)
     session_status = attendance_session_status(kind, event_id, event_date)
     if session_status == "blocked":

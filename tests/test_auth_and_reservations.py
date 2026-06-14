@@ -2,6 +2,7 @@ import time
 import secrets
 
 import app as myapp
+import attendance as attendancemod
 import auth as authmod
 import config as cfg
 
@@ -206,7 +207,8 @@ def test_my_reservations_data_groups_personal_and_courses(client, db):
     assert past_data["courses"][0]["sessions"][0]["instances"] == ["2025-03-10"]
 
 
-def test_attendance_join_and_roster(client, db):
+def test_attendance_join_and_roster(client, db, monkeypatch):
+    monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
     login(client, "alice")
 
     semester = db.semester(
@@ -265,6 +267,48 @@ def test_attendance_join_and_roster(client, db):
     assert [student["username"] for student in roster_after_data["students"]] == ["student1"]
 
 
+def test_attendance_blocked_outside_class_window(client, db, monkeypatch):
+    login(client, "alice")
+
+    semester = db.semester(
+        name="Current 2026",
+        start="2026-01-01",
+        end="2026-12-31",
+    )
+    room = db.room("R1")
+    teacher = db.teacher("Prof", "alice")
+    course = db.course("NumericalMethods")
+    session = db.course_session(course, teacher, semester)
+    weekly_session_id = db.weekly_session(
+        session_id=session,
+        room_id=room,
+        day_of_week=1,
+        start_slot=10,
+        end_slot=12,
+    )
+
+    monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: False)
+
+    roster = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/data")
+    assert roster.status_code == 403
+    assert roster.get_json()["error"] == "Пријава присуства је могућа само током часа."
+
+    challenge = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/challenge")
+    assert challenge.status_code == 403
+    assert challenge.get_json()["error"] == "Пријава присуства је могућа само током часа."
+
+    join = client.post(
+        f"/attendance/weekly/{weekly_session_id}/2026-03-09/join",
+        json={
+            "username": "student1",
+            "password": "secret",
+            "selected_code": 1234,
+        },
+    )
+    assert join.status_code == 403
+    assert join.get_json()["error"] == "Пријава присуства је могућа само током часа."
+
+
 def test_attendance_join_token_rotates_every_8_seconds(db):
     semester = db.semester(
         name="Current 2026",
@@ -313,7 +357,8 @@ def test_attendance_join_token_rotates_every_8_seconds(db):
     )
 
 
-def test_attendance_join_blocks_after_two_wrong_numbers(client, db):
+def test_attendance_join_blocks_after_two_wrong_numbers(client, db, monkeypatch):
+    monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
     login(client, "alice")
 
     semester = db.semester(
@@ -375,7 +420,8 @@ def test_attendance_join_blocks_after_two_wrong_numbers(client, db):
     assert challenge.get_json()["error"] == "Морате поново да скенирате QR код."
 
 
-def test_attendance_session_expired_is_reported_separately(client, db):
+def test_attendance_session_expired_is_reported_separately(client, db, monkeypatch):
+    monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
     schedule = db.schedule()
     room = schedule.room("R1")
     teacher = schedule.teacher("Prof", "alice")
@@ -412,7 +458,8 @@ def test_attendance_session_expired_is_reported_separately(client, db):
     assert challenge.get_json()["error"] == "Сесија је истекла. Поново скенирајте QR код."
 
 
-def test_expired_attendance_session_clears_failure_rows(client, db):
+def test_expired_attendance_session_clears_failure_rows(client, db, monkeypatch):
+    monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
     schedule = db.schedule()
     room = schedule.room("R1")
     teacher = schedule.teacher("Prof", "alice")

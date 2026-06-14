@@ -51,6 +51,8 @@ ATTENDANCE_CHALLENGE_TTL = int(os.getenv("ATTENDANCE_CHALLENGE_TTL", "10"))
 ATTENDANCE_SESSION_TTL = int(os.getenv("ATTENDANCE_SESSION_TTL", "90"))
 # How many older challenge rounds are still accepted as a grace window.
 ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS = int(os.getenv("ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS", "2"))
+# How many minutes before and after class attendance is allowed.
+ATTENDANCE_CLASS_GRACE_MINUTES = int(os.getenv("ATTENDANCE_CLASS_GRACE_MINUTES", "15"))
 # Teacher login mode: "mock" for local development or "radius" in production.
 TEACHER_AUTH_BACKEND = os.getenv("TEACHER_AUTH_BACKEND", "mock").lower()
 # Address of the teacher RADIUS server.

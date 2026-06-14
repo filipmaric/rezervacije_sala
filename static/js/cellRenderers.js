@@ -55,19 +55,18 @@ function renderCancelBtn(container, cellUsername, ctx, onAction) {
     return null;
 }
 
-function renderAttendanceBtn(container, ownerUsername, ctx, onAction) {
+function renderAttendanceBtn(ownerUsername, ctx, onAction) {
     if (!ctx.user || ownerUsername !== ctx.user) {
         return null;
     }
     const btn = document.createElement("button");
-    btn.className = "res-cancel-btn attendance-btn";
+    btn.className = "attendance-btn";
     btn.textContent = "▣";
     btn.title = "QR код за присуство";
     btn.onclick = (e) => {
         e.stopPropagation();
         onAction();
     };
-    container.appendChild(btn);
     return btn;
 }
 
@@ -86,7 +85,7 @@ function createTopBar() {
 }
 
 // Pomoćna za kalendar (unutar ovog fajla)
-function renderCalendarMenu(cellData, fullDate, container) {
+function renderCalendarMenu(cellData, fullDate) {
 	// Priprema podataka
 	const startTime = formatApiDate(fullDate, cellData.start);
 	const endTime = formatApiDate(fullDate, cellData.end);
@@ -140,8 +139,7 @@ function renderCalendarMenu(cellData, fullDate, container) {
 	dropdown.appendChild(btn);
 	dropdown.appendChild(menu);
 
-	// ubacivanje u prosleđeni kontejner
-	container.appendChild(dropdown);
+	return dropdown;
 }
 
 // objekat koji sadrži funkcije za kreiranje sadržaja raznih vrsta ćelija
@@ -162,15 +160,19 @@ export const CellRenderers = {
         // cancel dugme (ako korisnik ima prava)
 	const btn = renderCancelBtn(left, cellData.username, ctx, () => ctx.onDelete(cellData.id));
 
+        // dugme za QR prisustvo samo tokom časa
+        if (cellData.attendance_open !== false) {
+            const attendanceBtn = renderAttendanceBtn(cellData.username, ctx, () =>
+                ctx.onOpenAttendance("reservation", cellData.id, date)
+            );
+            if (attendanceBtn) {
+                right.appendChild(attendanceBtn);
+            }
+        }
+
         // dugme za integraciju sa kalendarima
-        const calWrap = document.createElement("div");
-        const attendanceWrap = document.createElement("div");
-        renderAttendanceBtn(attendanceWrap, cellData.username, ctx, () =>
-            ctx.onOpenAttendance("reservation", cellData.id, date)
-        );
-        right.appendChild(attendanceWrap);
-        renderCalendarMenu(cellData, date, calWrap);
-        right.appendChild(calWrap);
+        const calMenu = renderCalendarMenu(cellData, date);
+        right.appendChild(calMenu);
 
 	// opis rezervacije
         // izdvajamo samo deo pre '@' ako je u pitanju email adresa
@@ -208,7 +210,6 @@ export const CellRenderers = {
 
         // integracija sa kalendarom (samo ako čas nije otkazan)
         if (!cellData.canceled) {
-        const calWrap = document.createElement("div");
             // Mapiramo podatke iz weekly u format koji renderCalendarMenu očekuje
             const calData = {
                 id: cellData.weekly_session_id,
@@ -218,17 +219,26 @@ export const CellRenderers = {
                 start: cellData.start,
                 end: cellData.end
             };
-            const attendanceWrap = document.createElement("div");
-            renderAttendanceBtn(attendanceWrap, cellData.teacher_username, ctx, () =>
-                ctx.onOpenAttendance("weekly", cellData.weekly_session_id, date)
-            );
-            right.appendChild(attendanceWrap);
-            right.appendChild(calWrap);
-            renderCalendarMenu(calData, date, calWrap);
+            if (cellData.attendance_open !== false) {
+                const attendanceBtn = renderAttendanceBtn(cellData.teacher_username, ctx, () =>
+                    ctx.onOpenAttendance("weekly", cellData.weekly_session_id, date)
+                );
+                if (attendanceBtn) {
+                    right.appendChild(attendanceBtn);
+                }
+            }
+            const calMenu = renderCalendarMenu(calData, date);
+            right.appendChild(calMenu);
         }
         else {
-            const attendanceWrap = document.createElement("div");
-            right.appendChild(attendanceWrap);
+            if (cellData.attendance_open !== false) {
+                const attendanceBtn = renderAttendanceBtn(cellData.teacher_username, ctx, () =>
+                    ctx.onOpenAttendance("weekly", cellData.weekly_session_id, date)
+                );
+                if (attendanceBtn) {
+                    right.appendChild(attendanceBtn);
+                }
+            }
         }
 
         // sadržaj ćelije

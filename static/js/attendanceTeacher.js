@@ -1,6 +1,8 @@
 import { API } from './api.js';
 import { formatDateDDMMYYYY } from './util.js';
 
+let pollHandle = null;
+
 function buildJoinUrl(kind, eventId, eventDate, token) {
     const basePath = window.APP_CONFIG?.BASE_PATH || '';
     return `${window.location.origin}${basePath}/attendance/${kind}/${eventId}/${eventDate}/join/${token}`;
@@ -108,6 +110,26 @@ function renderRoster(root, students) {
     root.appendChild(section);
 }
 
+function showAccessMessage(root, messageText) {
+    if (pollHandle) {
+        clearInterval(pollHandle);
+        pollHandle = null;
+    }
+    root.innerHTML = '';
+    const panel = document.createElement('div');
+    panel.className = 'attendance-panel attendance-blocked-panel';
+
+    const title = document.createElement('h2');
+    title.textContent = 'Пријава присуства је могућа само током часа';
+    panel.appendChild(title);
+
+    const note = document.createElement('p');
+    note.textContent = messageText || 'Приступ је ограничен на време трајања часа.';
+    panel.appendChild(note);
+
+    root.appendChild(panel);
+}
+
 async function refresh(root) {
     const { kind, eventId, eventDate } = root.dataset;
     const data = await API.getAttendanceRoster(kind, eventId, eventDate);
@@ -131,8 +153,18 @@ const App = {
         const root = document.getElementById('attendance-root');
         try {
             await refresh(root);
-            setInterval(() => refresh(root).catch(() => {}), 1000);
+            pollHandle = setInterval(() => refresh(root).catch((err) => {
+                const errorText = err.data?.error || err.message || '';
+                if (err.status === 403 && errorText.includes('само током часа')) {
+                    showAccessMessage(root, errorText);
+                }
+            }), 1000);
         } catch (err) {
+            const errorText = err.data?.error || err.message || '';
+            if (err.status === 403 && errorText.includes('само током часа')) {
+                showAccessMessage(root, errorText);
+                return;
+            }
             root.innerHTML = '';
             const p = document.createElement('p');
             p.textContent = err.message;

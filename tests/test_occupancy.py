@@ -1,4 +1,5 @@
 import app as myapp
+import occupancy as occmod
 
 
 def test_occupancy_reservation(client, db):
@@ -24,6 +25,7 @@ def test_occupancy_reservation(client, db):
 
     assert events[0]["type"] == "reservation"
     assert events[0]["description"] == "meeting"
+    assert events[0]["attendance_open"] is False
     
 def test_occupancy_missing_date(client):
     r = client.get("/occupancy")
@@ -51,6 +53,26 @@ def test_weekly_session(client, db):
     data = r.get_json()
 
     assert str(room) in data["rooms"]    
+
+
+def test_weekly_session_attendance_open_flag(client, db, monkeypatch):
+    schedule = db.schedule()
+
+    schedule.lecture(
+        course="NumericalMethods",
+        teacher="Prof",
+        room="R1",
+        day=1,
+        start=2,
+        end=4
+    )
+
+    monkeypatch.setattr(occmod, "attendance_is_open_now", lambda row, now=None: True)
+    r = client.get("/occupancy?date=2026-03-09")
+    data = r.get_json()
+
+    events = data["rooms"][str(schedule.rooms["R1"])]
+    assert events[0]["attendance_open"] is True
 
 def test_weekly_lecture(client, db):
     schedule = db.schedule()

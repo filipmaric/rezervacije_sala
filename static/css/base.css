@@ -202,6 +202,17 @@ body {
 .attendance-btn {
     font-size: 0.9rem;
     margin-left: 0;
+    color: #000;
+    background: transparent;
+    border: none;
+    padding: 0 2px;
+    text-decoration: none;
+    line-height: 1;
+    display: inline-flex;
+    align-items: flex-start;
+    justify-content: center;
+    vertical-align: middle;
+    cursor: pointer;
 }
 
 .attendance-toggle-btn {
@@ -292,6 +303,19 @@ body {
 
 .attendance-summary-date {
     font-weight: 700;
+}
+
+.reservation-date-link,
+.attendance-date-link {
+    color: inherit;
+    text-decoration: none;
+}
+
+.reservation-date-link:hover,
+.reservation-date-link:focus,
+.attendance-date-link:hover,
+.attendance-date-link:focus {
+    text-decoration: underline;
 }
 
 .attendance-summary-count {
@@ -504,9 +528,28 @@ table.occupancy-table td.reservation {
     position: relative;
 }
 
+.slot-highlight.my {
+    border-left-color: #1f8f4d !important;
+    box-shadow: inset 0 0 0 2px rgba(46, 204, 113, 0.22);
+}
+
 .selected {
     background-color: #d0ebff !important;
     cursor: pointer;
+    position: relative;
+}
+
+.drag-tail::after {
+    content: "↓";
+    position: absolute;
+    left: 50%;
+    bottom: -8px;
+    transform: translateX(-50%);
+    font-size: 1.2rem;
+    line-height: 1;
+    color: #1f8f4d;
+    pointer-events: none;
+    z-index: 2;
 }
 
 
@@ -541,7 +584,7 @@ table.occupancy-table td.reservation {
 .res-top-bar-left,
 .res-top-bar-right {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 4px;
 }
 
