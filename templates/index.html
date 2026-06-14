@@ -7,31 +7,47 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/base.css') }}">
 </head>
 <body>
-  <h1>Резервације учионица</h1>
+  <main class="page-shell main-page-shell">
+    <header class="main-page-header">
+      <div class="main-page-title">
+        <h1>Резервације учионица</h1>
+      </div>
 
-  <div id="auth-container">
-    <form id="login-form">
-        <input type="text" id="username" placeholder="Корисничко име" required>
-        <input type="password" id="password" placeholder="Лозинка" required>
-        <button type="submit">Пријава</button>
-    </form>
+      <section class="main-toolbar" aria-label="Основне контроле">
+        <div class="main-toolbar-row main-toolbar-row-auth">
+          <div id="auth-container" class="auth-panel">
+            <form id="login-form">
+                <input type="text" id="username" placeholder="Корисничко име" required>
+                <input type="password" id="password" placeholder="Лозинка" required>
+                <button type="submit">Пријава</button>
+            </form>
 
-    <div id="logout-form" style="display:none">
-      <p id='login-info'></p>
-      <button id="logout">Одјава</button>
-    </div>
-  </div>
+            <div id="logout-form" style="display:none">
+              <p id="login-info"></p>
+              <button id="logout">Одјава</button>
+            </div>
+          </div>
 
-  <p id="my-reservations-wrap" style="display:none">
-    <a id="my-reservations-link" href="{{ url_for('reservations_views.my_reservations_view') }}">Моје резервације</a>
-  </p>
+          <p id="my-reservations-wrap" class="toolbar-link-wrap" style="display:none">
+            <a id="my-reservations-link" href="{{ url_for('reservations_views.my_reservations_view') }}">Моје резервације</a>
+          </p>
+        </div>
 
-  <label for="date">Датум:</label>
-  <input type="date" id="date-input" value="">
-  <button id="date-prev">&lt;&lt;</button>
-  <button id="date-next">&gt;&gt;</button>
+        <div class="main-toolbar-row main-toolbar-row-date">
+          <div class="date-control">
+            <label for="date-input">Датум</label>
+            <div class="date-control-inputs">
+              <button id="date-prev" type="button" aria-label="Prethodni dan">&lt;&lt;</button>
+              <input type="date" id="date-input" value="">
+              <button id="date-next" type="button" aria-label="Sledeći dan">&gt;&gt;</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </header>
 
-  <div id="occupancy"></div>
+    <div id="occupancy"></div>
+  </main>
 
   <script>
     window.APP_CONFIG = {
