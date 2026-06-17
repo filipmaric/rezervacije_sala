@@ -8,17 +8,17 @@ def test_occupancy_reservation(client, db):
 
     db.reservation(
         room_id=room_id,
-        date="2026-03-09",
+        date="2026-06-18",
         start=2,
         end=4,
         description="meeting",
     )
 
-    r = client.get("/occupancy?date=2026-03-09")
+    r = client.get("/occupancy?date=2026-06-18")
 
     data = r.get_json()
 
-    assert data["date"] == "2026-03-09"
+    assert data["date"] == "2026-06-18"
     assert str(room_id) in data["rooms"]
 
     events = data["rooms"][str(room_id)]
@@ -26,7 +26,49 @@ def test_occupancy_reservation(client, db):
     assert events[0]["type"] == "reservation"
     assert events[0]["description"] == "meeting"
     assert events[0]["attendance_open"] is False
-    
+    assert events[0]["can_cancel"] is True
+
+
+def test_occupancy_reservation_past_date_cannot_cancel(client, db):
+    room_id = db.room("R1")
+
+    db.reservation(
+        room_id=room_id,
+        date="2026-03-08",
+        start=2,
+        end=4,
+        description="meeting",
+    )
+
+    r = client.get("/occupancy?date=2026-03-08")
+    data = r.get_json()
+    events = data["rooms"][str(room_id)]
+    assert events[0]["can_cancel"] is False
+
+
+def test_occupancy_reservation_with_attendance_cannot_cancel(client, db):
+    room_id = db.room("R1")
+
+    res_id = db.reservation(
+        room_id=room_id,
+        date="2026-06-18",
+        start=2,
+        end=4,
+        description="meeting",
+    )
+    db.execute(
+        """
+        INSERT INTO attendance_records (event_kind, event_id, event_date, username)
+        VALUES (?, ?, ?, ?)
+        """,
+        ("reservation", res_id, "2026-06-18", "student1"),
+    )
+
+    r = client.get("/occupancy?date=2026-06-18")
+    data = r.get_json()
+    events = data["rooms"][str(room_id)]
+    assert events[0]["can_cancel"] is False
+
 def test_occupancy_missing_date(client):
     r = client.get("/occupancy")
 

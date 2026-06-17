@@ -50,6 +50,12 @@ def _ensure_attendance_schema(conn):
             event_id INTEGER NOT NULL,
             event_date TEXT NOT NULL,
             username TEXT NOT NULL,
+            registration_source TEXT NOT NULL DEFAULT 'web' CHECK(registration_source IN ('web', 'android')),
+            client_ip TEXT,
+            failed_attempts_before_success INTEGER NOT NULL DEFAULT 0,
+            spot_check_flagged INTEGER NOT NULL DEFAULT 0,
+            spot_check_teacher_username TEXT,
+            spot_check_flagged_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(event_kind, event_id, event_date, username)
         );
@@ -64,6 +70,28 @@ def _ensure_attendance_schema(conn):
         );
         """
     )
+    columns = {
+        row["name"]
+        for row in conn.execute("PRAGMA table_info(attendance_records)").fetchall()
+    }
+    if "registration_source" not in columns:
+        conn.execute(
+            "ALTER TABLE attendance_records ADD COLUMN registration_source TEXT NOT NULL DEFAULT 'web'"
+        )
+    if "client_ip" not in columns:
+        conn.execute("ALTER TABLE attendance_records ADD COLUMN client_ip TEXT")
+    if "failed_attempts_before_success" not in columns:
+        conn.execute(
+            "ALTER TABLE attendance_records ADD COLUMN failed_attempts_before_success INTEGER NOT NULL DEFAULT 0"
+        )
+    if "spot_check_flagged" not in columns:
+        conn.execute(
+            "ALTER TABLE attendance_records ADD COLUMN spot_check_flagged INTEGER NOT NULL DEFAULT 0"
+        )
+    if "spot_check_teacher_username" not in columns:
+        conn.execute("ALTER TABLE attendance_records ADD COLUMN spot_check_teacher_username TEXT")
+    if "spot_check_flagged_at" not in columns:
+        conn.execute("ALTER TABLE attendance_records ADD COLUMN spot_check_flagged_at TEXT")
     conn.commit()
 
 

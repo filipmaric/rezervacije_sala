@@ -7,6 +7,7 @@ from functools import wraps
 from flask import Blueprint, current_app, g, jsonify, request
 
 from auth import RATE_LIMITS, enforce_rate_limit, student_radius_auth
+from config import ATTENDANCE_ALLOWED_LOCATIONS
 from db import (
     hash_token,
     mobile_auth_assert_device_login_allowed,
@@ -59,6 +60,11 @@ def _session_payload(session, include_last_seen=False):
     if include_last_seen:
         payload["last_seen_at"] = session["last_seen_at"]
     return payload
+
+
+def _attendance_locations_payload():
+    """Serialize the fixed Android QR geofences for the mobile client."""
+    return ATTENDANCE_ALLOWED_LOCATIONS
 
 
 def require_mobile_session(fn):
@@ -168,4 +174,16 @@ def sessions():
     """Expose the current session id for clients that need to confirm login state."""
     session = g.mobile_auth_session
     user = mobile_auth_get_user_by_id(session["user_id"])
-    return jsonify({"user": _user_payload(user), "current_session_id": session["id"]})
+    return jsonify(
+        {
+            "user": _user_payload(user),
+            "current_session_id": session["id"],
+        }
+    )
+
+
+@bp.route("/attendance/locations", methods=["GET"])
+@require_mobile_session
+def attendance_locations():
+    """Return the fixed geofences used by the Android QR scanner."""
+    return jsonify({"attendance_locations": _attendance_locations_payload()})

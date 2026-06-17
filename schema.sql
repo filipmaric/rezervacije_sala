@@ -82,6 +82,12 @@ CREATE TABLE attendance_records (
     event_id INTEGER NOT NULL,
     event_date TEXT NOT NULL,
     username TEXT NOT NULL,
+    registration_source TEXT NOT NULL DEFAULT 'web' CHECK(registration_source IN ('web', 'android')),
+    client_ip TEXT,
+    failed_attempts_before_success INTEGER NOT NULL DEFAULT 0,
+    spot_check_flagged INTEGER NOT NULL DEFAULT 0,
+    spot_check_teacher_username TEXT,
+    spot_check_flagged_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(event_kind, event_id, event_date, username)
 );

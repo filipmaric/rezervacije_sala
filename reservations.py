@@ -176,10 +176,19 @@ def _attendance_count_for_event(kind, event_id, event_date):
     return int(row["count"]) if row else 0
 
 
-# Cancellation is allowed only for future events, or for today's event
-# while it is still running and no attendance has been recorded yet.
-def _can_cancel_on_date(date_str, end_slot, attendance_count, now=None):
-    """Return True when the event is still cancelable."""
+def _can_cancel_on_date(date_str, attendance_count=0, now=None):
+    """Return True when the reservation is current/future and has no attendance."""
+    try:
+        date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return False
+
+    now = now or _current_datetime()
+    return date >= now.date() and attendance_count == 0
+
+
+def _can_cancel_weekly_on_date(date_str, end_slot, attendance_count, now=None):
+    """Return True when a weekly session is still cancelable."""
     try:
         date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
     except ValueError:
@@ -211,7 +220,7 @@ def cancel_reservation(res_id):
         return limited
 
     # Check whether the reservation exists and belongs to the current user
-    row = query_db('SELECT username, date, end_slot FROM reservations WHERE id = ?', (res_id,), one=True)
+    row = query_db('SELECT username, date FROM reservations WHERE id = ?', (res_id,), one=True)
     if not row:
         return jsonify({'error':'Reservation not found'}), 404
 
@@ -221,11 +230,10 @@ def cancel_reservation(res_id):
 
     if not _can_cancel_on_date(
         row['date'],
-        row['end_slot'],
         _attendance_count_for_event('reservation', res_id, row['date']),
     ):
         return jsonify({
-            'error': 'Reservations can be canceled only before the end time and only if attendance has not been recorded.'
+            'error': 'Reservations can be canceled only on the current or future dates and only if attendance has not been recorded.'
         }), 409
 
     # Delete the reservation
@@ -285,7 +293,7 @@ def cancel_weekly_session_for_date():
     if not row:
         return jsonify({'error': 'weekly session not found for given date'}), 404
 
-    if not _can_cancel_on_date(
+    if not _can_cancel_weekly_on_date(
         date,
         row['end_slot'],
         _attendance_count_for_event('weekly', ws_id, date),

@@ -54,11 +54,13 @@ function escapeCsvValue(value) {
 
 function buildAttendanceSummaryCsv(summaryEntries) {
     const rows = [
-        ['Име и презиме', 'Индекс', 'Број присустава'],
+        ['Име и презиме', 'Индекс', 'Број присустава', 'Извор', 'IP адреса'],
         ...summaryEntries.map((entry) => [
             entry.student_name || 'Непознато',
             entry.student_index || '',
             entry.count,
+            entry.registration_source || '',
+            entry.client_ip || '',
         ]),
     ];
     return '\ufeff' + rows.map((row) => row.map(escapeCsvValue).join(';')).join('\n');
@@ -85,7 +87,15 @@ function renderEmptyMessage(container, message) {
 
 function createAttendanceListItem(student) {
     const li = document.createElement('li');
-    li.textContent = student.student_label || 'Непознато';
+    const label = document.createElement('span');
+    label.textContent = student.student_label || 'Непознато';
+    li.appendChild(label);
+
+    const source = document.createElement('span');
+    const normalizedSource = String(student.registration_source || '').toLowerCase() === 'android' ? 'android' : 'web';
+    source.className = `attendance-source-badge attendance-source-${normalizedSource}`;
+    source.textContent = normalizedSource;
+    li.appendChild(source);
     return li;
 }
 
@@ -157,13 +167,15 @@ function openAttendanceDialog(date, students) {
     if (students.length > 0) {
         downloadButton.textContent = 'Преузми CSV';
         downloadButton.onclick = () => {
-            const csv = buildAttendanceSummaryCsv(
-                students.map((student) => ({
-                    student_name: student.student_name,
-                    student_index: student.student_index,
-                    count: 1,
-                }))
-            );
+                const csv = buildAttendanceSummaryCsv(
+                    students.map((student) => ({
+                        student_name: student.student_name,
+                        student_index: student.student_index,
+                        count: 1,
+                        registration_source: student.registration_source || '',
+                        client_ip: student.client_ip || '',
+                    }))
+                );
             const safeDate = String(date).replace(/[^0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'datum';
             downloadTextFile(`prisustvo_${safeDate}.csv`, csv);
         };
@@ -487,6 +499,8 @@ async function renderCourseSessions(container, courses) {
                         student_name: student.student_name || '',
                         student_index: student.student_index || '',
                         count: 0,
+                        registration_source: student.registration_source || '',
+                        client_ip: student.client_ip || '',
                     };
                     current.count += 1;
                     if (!current.student_name && student.student_name) {
@@ -494,6 +508,12 @@ async function renderCourseSessions(container, courses) {
                     }
                     if (!current.student_index && student.student_index) {
                         current.student_index = student.student_index;
+                    }
+                    if (!current.registration_source && student.registration_source) {
+                        current.registration_source = student.registration_source;
+                    }
+                    if (!current.client_ip && student.client_ip) {
+                        current.client_ip = student.client_ip;
                     }
                     attendanceTotals.set(key, current);
                 });

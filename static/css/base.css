@@ -524,6 +524,62 @@ body {
     margin-left: auto;
 }
 
+.attendance-roster li,
+.attendance-dialog li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 4px 0;
+}
+
+.attendance-source-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid #cfd6dc;
+    background: #eef2f5;
+    color: #334155;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.attendance-source-web {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    color: #374151;
+}
+
+.attendance-source-android {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+    color: #166534;
+}
+
+.attendance-spot-check-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.attendance-spot-check-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.attendance-roster ol,
+.attendance-dialog ol {
+    margin: 0;
+    padding-inline-start: 24px;
+}
+
 .attendance-dialog {
     width: min(680px, calc(100vw - 32px));
     border: 1px solid #ccc;
@@ -539,7 +595,7 @@ body {
 .attendance-dialog-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
     gap: 12px;
     margin-bottom: 12px;
 }
@@ -560,11 +616,10 @@ body {
     font-size: 0.95rem;
 }
 
-.attendance-dialog-actions {
+.attendance-dialog-footer {
     display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-shrink: 0;
+    justify-content: flex-end;
+    margin-top: 16px;
 }
 
 .student-attendance-shell #attendance-join-root {
@@ -674,16 +729,19 @@ body {
 }
 
 .attendance-dialog-close {
+    align-self: flex-start;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 999px;
+    line-height: 1;
+    font-size: 1.25rem;
+    flex-shrink: 0;
     white-space: nowrap;
 }
 
 .attendance-dialog-download {
     white-space: nowrap;
-}
-
-.attendance-dialog ol {
-    margin: 0;
-    padding-inline-start: 24px;
 }
 
 /* ==========================================================================

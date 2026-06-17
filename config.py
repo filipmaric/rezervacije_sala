@@ -1,5 +1,6 @@
 """Central application configuration and environment-backed constants."""
 
+import json
 import os
 
 
@@ -35,6 +36,54 @@ def load_env(name, dev_default):
     return dev_default
 
 
+def load_json_env(name, dev_default):
+    """Read a JSON configuration value from the environment."""
+    value = os.getenv(name)
+    if not value:
+        if IS_PRODUCTION:
+            raise RuntimeError(f"{name} must be set when APP_ENV=production")
+        return dev_default
+
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"{name} must contain valid JSON") from exc
+
+    if not isinstance(parsed, list):
+        raise RuntimeError(f"{name} must contain a JSON list")
+
+    normalized = []
+    for index, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            raise RuntimeError(f"{name}[{index}] must be a JSON object")
+
+        try:
+            latitude = float(item["latitude"])
+            longitude = float(item["longitude"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError(f"{name}[{index}] must define latitude and longitude") from exc
+
+        radius_value = item.get("radius_m", item.get("radius", 100))
+        try:
+            radius_m = float(radius_value)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(f"{name}[{index}].radius_m must be numeric") from exc
+        if radius_m <= 0:
+            raise RuntimeError(f"{name}[{index}].radius_m must be positive")
+
+        label = str(item.get("name", "")).strip() or f"Lokacija {index + 1}"
+        normalized.append(
+            {
+                "name": label,
+                "latitude": latitude,
+                "longitude": longitude,
+                "radius_m": radius_m,
+            }
+        )
+
+    return normalized
+
+
 # URL prefix where the app is mounted. In production it is /rezervacije.
 STATIC_URL_PATH = os.getenv("STATIC_URL_PATH", "/static")
 # Base URL path used when Flask builds links for this app.
@@ -53,6 +102,16 @@ ATTENDANCE_SESSION_TTL = int(os.getenv("ATTENDANCE_SESSION_TTL", "90"))
 ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS = int(os.getenv("ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS", "2"))
 # How many minutes before and after class attendance is allowed.
 ATTENDANCE_CLASS_GRACE_MINUTES = int(os.getenv("ATTENDANCE_CLASS_GRACE_MINUTES", "15"))
+# Fixed geofences where Android QR scanning is allowed.
+ATTENDANCE_ALLOWED_LOCATIONS = load_json_env(
+    "ATTENDANCE_ALLOWED_LOCATIONS",
+    [
+        {"name": "MATF 1", "latitude": 44.8200177330261, "longitude": 20.45871822883615, "radius_m": 100},
+        {"name": "MATF 2", "latitude": 44.803735279889494, "longitude": 20.495233662987637, "radius_m": 100},
+        {"name": "MATF 3", "latitude": 44.80004520753084, "longitude": 20.48487938340236, "radius_m": 100},
+        {"name": "MATF 4", "latitude": 44.81436248315949, "longitude": 20.431317725207304, "radius_m": 100},
+    ],
+)
 # How many days an Android app session remains valid.
 MOBILE_AUTH_SESSION_DAYS = int(os.getenv("MOBILE_AUTH_SESSION_DAYS", "30"))
 # Teacher login mode: "mock" for local development or "radius" in production.

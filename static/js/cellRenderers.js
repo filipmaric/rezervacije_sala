@@ -157,8 +157,10 @@ export const CellRenderers = {
 
         const { topBar, left, right } = createTopBar();
 
-        // cancel dugme (ako korisnik ima prava)
-	const btn = renderCancelBtn(left, cellData.username, ctx, () => ctx.onDelete(cellData.id));
+        // cancel dugme (ako korisnik ima prava i rezervacija je još otkaziva)
+        if (cellData.can_cancel !== false) {
+            renderCancelBtn(left, cellData.username, ctx, () => ctx.onDelete(cellData.id));
+        }
 
         // dugme za QR prisustvo samo tokom časa
         if (cellData.attendance_open !== false) {

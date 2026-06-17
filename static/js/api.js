@@ -90,6 +90,21 @@ export const API = {
         });
         return handleResponse(res, "Грешка при учитавању листе присутних");
     },
+    async getAttendanceSpotCheck(kind, eventId, eventDate, limit = 5) {
+        const res = await fetch(getUrl(`/attendance/${kind}/${eventId}/${eventDate}/spot_check?limit=${encodeURIComponent(limit)}`), {
+            credentials: "same-origin",
+        });
+        return handleResponse(res, "Грешка при учитавању провере присуства");
+    },
+    async submitAttendanceSpotCheck(kind, eventId, eventDate, body) {
+        const res = await fetch(getUrl(`/attendance/${kind}/${eventId}/${eventDate}/spot_check`), {
+            method: "POST",
+            headers: withCsrfHeaders({ "Content-Type": "application/json" }),
+            credentials: "same-origin",
+            body: JSON.stringify(body),
+        });
+        return handleResponse(res, "Грешка при чувању провере присуства");
+    },
     async submitAttendance(kind, eventId, eventDate, body) {
         const res = await fetch(getUrl(`/attendance/${kind}/${eventId}/${eventDate}/join`), {
             method: "POST",

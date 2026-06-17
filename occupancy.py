@@ -65,6 +65,33 @@ def check_day(date):
     return (is_working, week_day, dow)
 
 
+def _attendance_count_for_event(kind, event_id, event_date):
+    """Count attendance rows for one event occurrence."""
+    row = query_db(
+        """
+        SELECT COUNT(*) AS count
+        FROM attendance_records
+        WHERE event_kind = ?
+          AND event_id = ?
+          AND event_date = ?
+        """,
+        (kind, event_id, event_date),
+        one=True,
+    )
+    return int(row["count"]) if row else 0
+
+
+def _can_cancel_reservation_on_date(date_str, attendance_count=0, now=None):
+    """Return True when a reservation is current/future and has no attendance."""
+    try:
+        date = datetime.datetime.strptime(date_str, "%Y-%m-%d").date()
+    except ValueError:
+        return False
+
+    now = now or datetime.datetime.now()
+    return date >= now.date() and attendance_count == 0
+
+
 
 # Read endpoints.
 
@@ -169,6 +196,10 @@ def occupancy():
     """
     for r in query_db(q2, (date,)):
         room_id = str(r["room_id"])
+        can_cancel = _can_cancel_reservation_on_date(
+            date,
+            _attendance_count_for_event("reservation", r["id"], date),
+        )
         result.setdefault(room_id, []).append(
             {
                 "type": "reservation",
@@ -185,6 +216,7 @@ def occupancy():
                         "end_slot": r["end_slot"],
                     }
                 ),
+                "can_cancel": can_cancel,
             }
         )
 

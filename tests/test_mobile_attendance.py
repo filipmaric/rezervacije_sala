@@ -49,6 +49,7 @@ def make_weekly_event(db):
 
 def test_mobile_attendance_challenge_and_submit(client, db, monkeypatch):
     monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
+    monkeypatch.setattr(attendancemod, "ATTENDANCE_ALLOWED_LOCATIONS", [])
     fixed_now = freeze_attendance_now(monkeypatch, datetime.datetime(2026, 6, 16, 10, 0, 0))
     weekly_session_id = make_weekly_event(db)
     event_date = "2026-03-09"
@@ -73,6 +74,7 @@ def test_mobile_attendance_challenge_and_submit(client, db, monkeypatch):
     success = client.post(
         f"/attendance/weekly/{weekly_session_id}/{event_date}/join",
         headers={"Authorization": f"Bearer {token}"},
+        environ_base={"REMOTE_ADDR": "192.0.2.20"},
         json={
             "join_token": join_token,
             "selected_code": current_code,
@@ -83,7 +85,7 @@ def test_mobile_attendance_challenge_and_submit(client, db, monkeypatch):
 
     roster = myapp.query_db(
         """
-        SELECT username
+        SELECT username, registration_source, client_ip
         FROM attendance_records
         WHERE event_kind = ? AND event_id = ? AND event_date = ?
         """,
@@ -91,10 +93,13 @@ def test_mobile_attendance_challenge_and_submit(client, db, monkeypatch):
         one=True,
     )
     assert roster["username"] == "alice"
+    assert roster["registration_source"] == "android"
+    assert roster["client_ip"] == "192.0.2.20"
 
 
 def test_mobile_attendance_blocks_wrong_number_without_username_password(client, db, monkeypatch):
     monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
+    monkeypatch.setattr(attendancemod, "ATTENDANCE_ALLOWED_LOCATIONS", [])
     fixed_now = freeze_attendance_now(monkeypatch, datetime.datetime(2026, 6, 16, 10, 0, 0))
     weekly_session_id = make_weekly_event(db)
     event_date = "2026-03-09"
@@ -123,3 +128,63 @@ def test_mobile_attendance_blocks_wrong_number_without_username_password(client,
     )
     assert first.status_code == 409
 
+
+def test_mobile_attendance_requires_allowed_location(client, db, monkeypatch):
+    monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
+    monkeypatch.setattr(
+        attendancemod,
+        "ATTENDANCE_ALLOWED_LOCATIONS",
+        [
+            {
+                "name": "MATF",
+                "latitude": 44.815,
+                "longitude": 20.457,
+                "radius_m": 100.0,
+            }
+        ],
+    )
+    fixed_now = freeze_attendance_now(monkeypatch, datetime.datetime(2026, 6, 16, 10, 0, 0))
+    weekly_session_id = make_weekly_event(db)
+    event_date = "2026-03-09"
+    join_token = myapp.attendance_join_token(
+        "weekly",
+        weekly_session_id,
+        event_date,
+        now=fixed_now,
+    )
+    token = mobile_login(client)
+
+    challenge = client.get(
+        f"/attendance/weekly/{weekly_session_id}/{event_date}/challenge?join_token={join_token}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    current_code = challenge.get_json()["challenge"]["current_code"]
+
+    denied = client.post(
+        f"/attendance/weekly/{weekly_session_id}/{event_date}/join",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "join_token": join_token,
+            "selected_code": current_code,
+            "latitude": 44.0,
+            "longitude": 21.0,
+        },
+    )
+    assert denied.status_code == 403
+    payload = denied.get_json()
+    assert "локације" in payload["error"]
+    assert payload["current_location"] == {"latitude": 44.0, "longitude": 21.0}
+    assert payload["closest_location"]["name"] == "MATF"
+    assert payload["closest_location"]["distance_m"] > 0
+
+    allowed = client.post(
+        f"/attendance/weekly/{weekly_session_id}/{event_date}/join",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "join_token": join_token,
+            "selected_code": current_code,
+            "latitude": 44.815,
+            "longitude": 20.457,
+        },
+    )
+    assert allowed.status_code == 200

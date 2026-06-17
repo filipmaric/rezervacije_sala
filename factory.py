@@ -8,6 +8,7 @@ from logging.handlers import RotatingFileHandler
 
 from config import (
     APPLICATION_ROOT,
+    ATTENDANCE_ALLOWED_LOCATIONS,
     IS_PRODUCTION,
     LOG_FILE,
     MOBILE_AUTH_SESSION_DAYS,
@@ -53,6 +54,8 @@ def create_app():
         ):
             if not os.getenv(name):
                 raise RuntimeError(f"{name} must be set when APP_ENV=production")
+        if not ATTENDANCE_ALLOWED_LOCATIONS:
+            raise RuntimeError("ATTENDANCE_ALLOWED_LOCATIONS must be set when APP_ENV=production")
 
     try:
         handler = RotatingFileHandler(LOG_FILE, maxBytes=1000000, backupCount=3)

@@ -3,6 +3,7 @@
 import datetime
 import hashlib
 import hmac
+import math
 import random
 import secrets
 
@@ -11,6 +12,7 @@ from flask_login import current_user
 from config import (
     ATTENDANCE_CHALLENGE_TTL,
     ATTENDANCE_CLASS_GRACE_MINUTES,
+    ATTENDANCE_ALLOWED_LOCATIONS,
     ATTENDANCE_JOIN_TOKEN_TTL,
     ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS,
     ATTENDANCE_SECRET,
@@ -251,8 +253,12 @@ def attendance_records_for_event(kind, event_id, event_date):
     """Return the students who have already checked in for an event."""
     rows = query_db(
         """
-        SELECT ar.username,
+        SELECT ar.id,
+               ar.username,
                ar.created_at,
+               ar.registration_source,
+               ar.client_ip,
+               ar.failed_attempts_before_success,
                s.student_index,
                s.surname,
                s.given_name
@@ -281,8 +287,12 @@ def attendance_records_for_event(kind, event_id, event_date):
 
         students.append(
             {
+                "attendance_record_id": row["id"],
                 "username": row["username"],
                 "created_at": row["created_at"],
+                "registration_source": row["registration_source"],
+                "client_ip": row["client_ip"],
+                "failed_attempts_before_success": int(row["failed_attempts_before_success"] or 0),
                 "student_index": student_index or None,
                 "student_name": full_name or None,
                 "student_label": student_label,
@@ -291,15 +301,109 @@ def attendance_records_for_event(kind, event_id, event_date):
     return students
 
 
-def attendance_record_student(kind, event_id, event_date, username):
+def attendance_record_student(
+    kind,
+    event_id,
+    event_date,
+    username,
+    registration_source="web",
+    client_ip=None,
+    failed_attempts_before_success=0,
+):
     """Store one successful attendance check-in for a student."""
     execute_db(
         """
-        INSERT OR IGNORE INTO attendance_records (event_kind, event_id, event_date, username)
-        VALUES (?, ?, ?, ?)
+        INSERT OR IGNORE INTO attendance_records
+            (event_kind, event_id, event_date, username, registration_source, client_ip, failed_attempts_before_success)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """,
-        (kind, event_id, event_date, username),
+        (kind, event_id, event_date, username, registration_source, client_ip, int(failed_attempts_before_success or 0)),
     )
+
+
+def attendance_spot_check_score(student, rank, total):
+    """Compute a temporary suspicion score for one attendance record."""
+    score = 0
+    if str(student.get("registration_source", "")).lower() == "web":
+        score += 3
+
+    failed_attempts = int(student.get("failed_attempts_before_success") or 0)
+    if failed_attempts >= 2:
+        score += 4
+    elif failed_attempts == 1:
+        score += 2
+
+    if total > 0:
+        percentile = rank / total
+        if percentile > 0.8:
+            score += 2
+        elif percentile > 0.6:
+            score += 1
+
+    return score
+
+
+def attendance_spot_check_candidates_for_event(kind, event_id, event_date, limit=5):
+    """Return the most suspicious students for a teacher spot check."""
+    if limit <= 0:
+        return []
+
+    students = attendance_records_for_event(kind, event_id, event_date)
+    total = len(students)
+    scored = []
+    for index, student in enumerate(students, start=1):
+        scored.append(
+            (
+                attendance_spot_check_score(student, index, total),
+                index,
+                student,
+            )
+        )
+
+    scored.sort(key=lambda item: (-item[0], -item[1], item[2]["username"]))
+    return [item[2] for item in scored[:limit]]
+
+
+def attendance_spot_check_record_misses(kind, event_id, event_date, selected_usernames, confirmed_usernames, teacher_username):
+    """Store the students from a spot-check shortlist that the teacher did not confirm."""
+    selected = {username for username in selected_usernames if username}
+    confirmed = {username for username in confirmed_usernames if username}
+    missed = selected - confirmed
+    if not missed:
+        return 0
+
+    updated = 0
+    for username in sorted(missed):
+        row = query_db(
+            """
+            SELECT username
+            FROM attendance_records
+            WHERE event_kind = ?
+              AND event_id = ?
+              AND event_date = ?
+              AND username = ?
+            """,
+            (kind, event_id, event_date, username),
+            one=True,
+        )
+        if not row:
+            continue
+        execute_db(
+            """
+            UPDATE attendance_records
+            SET spot_check_flagged = 1,
+                spot_check_teacher_username = ?,
+                spot_check_flagged_at = datetime('now')
+            WHERE event_kind = ?
+              AND event_id = ?
+              AND event_date = ?
+              AND username = ?
+            """,
+            (teacher_username, kind, event_id, event_date, username),
+        )
+        updated += 1
+
+    return updated
 
 
 # Attendance failure tracking and expiry cleanup.
@@ -498,6 +602,77 @@ def attendance_mobile_session_from_request():
         return None
 
     return {"session": session, "user": user}
+
+
+def attendance_client_ip():
+    """Return the best-effort client IP address for attendance auditing."""
+    client_ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown")
+    return client_ip.split(",")[0].strip() or "unknown"
+
+
+def attendance_distance_meters(latitude1, longitude1, latitude2, longitude2):
+    """Return the distance between two coordinates in meters."""
+    radius_m = 6371000.0
+    lat1 = math.radians(float(latitude1))
+    lon1 = math.radians(float(longitude1))
+    lat2 = math.radians(float(latitude2))
+    lon2 = math.radians(float(longitude2))
+    delta_lat = lat2 - lat1
+    delta_lon = lon2 - lon1
+    a = (
+        math.sin(delta_lat / 2.0) ** 2
+        + math.cos(lat1) * math.cos(lat2) * math.sin(delta_lon / 2.0) ** 2
+    )
+    return 2.0 * radius_m * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+
+
+def attendance_location_is_allowed(latitude, longitude):
+    """Check whether the supplied coordinates are inside one of the allowed geofences."""
+    if not ATTENDANCE_ALLOWED_LOCATIONS:
+        return True, None
+
+    closest = None
+    closest_distance = None
+    for location in ATTENDANCE_ALLOWED_LOCATIONS:
+        distance = attendance_distance_meters(
+            latitude,
+            longitude,
+            location["latitude"],
+            location["longitude"],
+        )
+        if closest_distance is None or distance < closest_distance:
+            closest = location
+            closest_distance = distance
+        if distance <= location["radius_m"]:
+            return True, location
+
+    return False, closest
+
+
+def attendance_geofence_rejection_payload(latitude, longitude, closest):
+    """Build a diagnostic payload for a rejected mobile geofence check."""
+    payload = {
+        "error": "Пријава је могућа само у близини дозвољене локације.",
+        "current_location": {
+            "latitude": float(latitude),
+            "longitude": float(longitude),
+        },
+    }
+    if closest:
+        distance = attendance_distance_meters(
+            latitude,
+            longitude,
+            closest["latitude"],
+            closest["longitude"],
+        )
+        payload["closest_location"] = {
+            "name": closest.get("name"),
+            "latitude": closest.get("latitude"),
+            "longitude": closest.get("longitude"),
+            "radius_m": closest.get("radius_m"),
+            "distance_m": round(distance, 1),
+        }
+    return payload
 
 
 # QR token and attendance-session helpers.
@@ -742,6 +917,72 @@ def attendance_roster_data(kind, event_id, event_date):
     })
 
 
+@bp.route('/attendance/<kind>/<int:event_id>/<event_date>/spot_check', methods=['GET'])
+def attendance_spot_check_data(kind, event_id, event_date):
+    """Return a shortlist of the most suspicious students for a manual teacher check."""
+    if not attendance_kind_valid(kind):
+        abort(404)
+
+    row = attendance_event_row(kind, event_id, event_date)
+    if not row:
+        return jsonify({'error': 'event not found'}), 404
+    if not attendance_can_view(kind, row):
+        return jsonify({'error': 'Forbidden'}), 403
+    if not attendance_is_open_now(row):
+        return jsonify({'error': attendance_not_open_message()}), 403
+
+    limit = request.args.get('limit', '5').strip()
+    try:
+        limit_value = max(1, min(20, int(limit)))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid limit'}), 400
+
+    students = attendance_spot_check_candidates_for_event(kind, event_id, event_date, limit=limit_value)
+    return jsonify({
+        'event': row,
+        'limit': limit_value,
+        'students': [
+            {
+                'username': student['username'],
+                'student_label': student['student_label'],
+            }
+            for student in students
+        ],
+    })
+
+
+@bp.route('/attendance/<kind>/<int:event_id>/<event_date>/spot_check', methods=['POST'])
+def attendance_spot_check_submit(kind, event_id, event_date):
+    """Store the shortlist entries that the teacher did not confirm."""
+    if not attendance_kind_valid(kind):
+        abort(404)
+
+    row = attendance_event_row(kind, event_id, event_date)
+    if not row:
+        return jsonify({'error': 'event not found'}), 404
+    if not attendance_can_view(kind, row):
+        return jsonify({'error': 'Forbidden'}), 403
+    if not attendance_is_open_now(row):
+        return jsonify({'error': attendance_not_open_message()}), 403
+
+    payload = request.get_json(silent=True) or {}
+    selected_usernames = payload.get('selected_usernames') or []
+    confirmed_usernames = payload.get('confirmed_usernames') or []
+    if not isinstance(selected_usernames, list) or not isinstance(confirmed_usernames, list):
+        return jsonify({'error': 'selected_usernames_and_confirmed_usernames_are_required'}), 400
+
+    teacher_username = getattr(current_user, 'username', '') or getattr(current_user, 'id', '')
+    recorded = attendance_spot_check_record_misses(
+        kind,
+        event_id,
+        event_date,
+        selected_usernames,
+        confirmed_usernames,
+        teacher_username,
+    )
+    return jsonify({'success': True, 'recorded': recorded})
+
+
 
 @bp.route('/attendance/<kind>/<int:event_id>/<event_date>/join', methods=['POST'])
 def attendance_join_submit(kind, event_id, event_date):
@@ -772,6 +1013,15 @@ def attendance_join_submit(kind, event_id, event_date):
             return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
         username = mobile_session["user"]["radius_username"].strip()
         password = None
+        if ATTENDANCE_ALLOWED_LOCATIONS:
+            try:
+                latitude = float(data.get("latitude"))
+                longitude = float(data.get("longitude"))
+            except (TypeError, ValueError):
+                return jsonify({"error": "Потребна је локација уређаја."}), 403
+            allowed, closest = attendance_location_is_allowed(latitude, longitude)
+            if not allowed:
+                return jsonify(attendance_geofence_rejection_payload(latitude, longitude, closest)), 403
     else:
         session_token = attendance_session_from_request(kind, event_id, event_date)
         session_status = attendance_session_status(kind, event_id, event_date)
@@ -799,6 +1049,16 @@ def attendance_join_submit(kind, event_id, event_date):
     if password is not None and not student_radius_auth(username, password):
         return jsonify({'error': 'Invalid credentials'}), 401
 
+    failure_state = attendance_session_failure_state_raw(session_token) or {}
     attendance_session_clear_failures(session_token)
-    attendance_record_student(kind, event_id, event_date, username)
+    registration_source = "android" if mobile_session else "web"
+    attendance_record_student(
+        kind,
+        event_id,
+        event_date,
+        username,
+        registration_source=registration_source,
+        client_ip=attendance_client_ip(),
+        failed_attempts_before_success=int(failure_state.get("failed_attempts") or 0),
+    )
     return jsonify({'success': True, 'username': username})

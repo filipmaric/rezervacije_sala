@@ -260,6 +260,7 @@ def test_attendance_join_and_roster(client, db, monkeypatch):
 
     join = client.post(
         f"/attendance/weekly/{weekly_session_id}/2026-03-09/join",
+        environ_base={"REMOTE_ADDR": "192.0.2.10"},
         json={
             "username": "student1",
             "password": "secret",
@@ -277,6 +278,98 @@ def test_attendance_join_and_roster(client, db, monkeypatch):
     assert roster_after_data["students"][0]["student_index"] == "1140/2025"
     assert roster_after_data["students"][0]["student_name"] == "Fritz Ali Agildere"
     assert roster_after_data["students"][0]["student_label"] == "Fritz Ali Agildere (1140/2025)"
+
+    stored = myapp.query_db(
+        """
+        SELECT registration_source, client_ip
+        FROM attendance_records
+        WHERE event_kind = ? AND event_id = ? AND event_date = ? AND username = ?
+        """,
+        ("weekly", weekly_session_id, "2026-03-09", "student1"),
+        one=True,
+    )
+    assert stored["registration_source"] == "web"
+    assert stored["client_ip"] == "192.0.2.10"
+
+
+def test_attendance_spot_check_shortlist_and_flags_unconfirmed(client, db, monkeypatch):
+    monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
+    login(client, "alice")
+
+    semester = db.semester(
+        name="Current 2026",
+        start="2026-01-01",
+        end="2026-12-31",
+    )
+    room = db.room("R1")
+    teacher = db.teacher("Prof", "alice")
+    course = db.course("NumericalMethods")
+    session = db.course_session(course, teacher, semester)
+    weekly_session_id = db.weekly_session(
+        session_id=session,
+        room_id=room,
+        day_of_week=1,
+        start_slot=10,
+        end_slot=12,
+    )
+    db.student("android_one", "1000/2025", "Android", "One")
+    db.student("web_one", "1001/2025", "Web", "One")
+    db.student("web_two", "1002/2025", "Web", "Two")
+    db.execute(
+        """
+        INSERT INTO attendance_records
+            (event_kind, event_id, event_date, username, registration_source, failed_attempts_before_success)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        ("weekly", weekly_session_id, "2026-03-09", "android_one", "android", 0),
+    )
+    db.execute(
+        """
+        INSERT INTO attendance_records
+            (event_kind, event_id, event_date, username, registration_source, failed_attempts_before_success)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        ("weekly", weekly_session_id, "2026-03-09", "web_one", "web", 0),
+    )
+    db.execute(
+        """
+        INSERT INTO attendance_records
+            (event_kind, event_id, event_date, username, registration_source, failed_attempts_before_success)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        ("weekly", weekly_session_id, "2026-03-09", "web_two", "web", 2),
+    )
+
+    shortlist = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/spot_check?limit=2")
+    assert shortlist.status_code == 200
+    shortlist_data = shortlist.get_json()
+    assert [student["username"] for student in shortlist_data["students"]] == ["web_two", "web_one"]
+    assert "registration_source" not in shortlist_data["students"][0]
+
+    submit = client.post(
+        f"/attendance/weekly/{weekly_session_id}/2026-03-09/spot_check",
+        json={
+            "selected_usernames": ["web_two", "web_one"],
+            "confirmed_usernames": ["web_two"],
+        },
+    )
+    assert submit.status_code == 200
+    assert submit.get_json() == {"success": True, "recorded": 1}
+
+    flagged = myapp.query_db(
+        """
+        SELECT username, spot_check_teacher_username, spot_check_flagged, spot_check_flagged_at
+        FROM attendance_records
+        WHERE event_kind = ? AND event_id = ? AND event_date = ?
+          AND spot_check_flagged = 1
+        """,
+        ("weekly", weekly_session_id, "2026-03-09"),
+    )
+    assert len(flagged) == 1
+    assert flagged[0]["username"] == "web_one"
+    assert flagged[0]["spot_check_teacher_username"] == "alice"
+    assert int(flagged[0]["spot_check_flagged"]) == 1
+    assert flagged[0]["spot_check_flagged_at"] is not None
 
 
 def test_attendance_roster_uses_unknown_fallback(client, db):
@@ -674,7 +767,7 @@ def test_delete_reservation_current_blocked_when_attendance_exists(client, db, m
     r = client.delete(f"/reservation/{res_id}")
     assert r.status_code == 409
     assert r.get_json() == {
-        "error": "Reservations can be canceled only before the end time and only if attendance has not been recorded."
+        "error": "Reservations can be canceled only on the current or future dates and only if attendance has not been recorded."
     }
 
 
@@ -694,7 +787,7 @@ def test_delete_reservation_past_blocked(client, db, monkeypatch):
     r = client.delete(f"/reservation/{res_id}")
     assert r.status_code == 409
     assert r.get_json() == {
-        "error": "Reservations can be canceled only before the end time and only if attendance has not been recorded."
+        "error": "Reservations can be canceled only on the current or future dates and only if attendance has not been recorded."
     }
 
 

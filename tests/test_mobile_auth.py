@@ -18,6 +18,7 @@ def test_mobile_auth_login_me_and_logout(client):
     assert payload["token_type"] == "Bearer"
     assert payload["user"]["radius_username"] == "alice"
     assert payload["session"]["device_id"] == "device-1"
+    assert "attendance_locations" not in payload
 
     token = payload["token"]
 
@@ -27,6 +28,19 @@ def test_mobile_auth_login_me_and_logout(client):
     assert payload["user"]["radius_username"] == "alice"
     assert payload["session"]["device_name"] == "Pixel"
     assert "last_seen_at" in payload["session"]
+    assert "attendance_locations" not in payload
+
+    response = client.get("/attendance/locations", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert "attendance_locations" in payload
+    assert isinstance(payload["attendance_locations"], list)
+
+    response = client.get("/auth/sessions", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["current_session_id"]
+    assert "attendance_locations" not in payload
 
     response = client.post("/auth/logout", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 200
@@ -71,4 +85,9 @@ def test_mobile_auth_rejects_invalid_credentials(client, monkeypatch):
     )
 
     response = _mobile_login(client, username="alice", password="wrong")
+    assert response.status_code == 401
+
+
+def test_mobile_attendance_locations_requires_session(client):
+    response = client.get("/attendance/locations")
     assert response.status_code == 401

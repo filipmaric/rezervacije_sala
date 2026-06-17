@@ -2,6 +2,7 @@ import { API } from './api.js';
 import { formatDateDDMMYYYY } from './util.js';
 
 let pollHandle = null;
+let activeSpotCheck = null;
 
 function buildJoinUrl(kind, eventId, eventDate, token) {
     const basePath = window.APP_CONFIG?.BASE_PATH || '';
@@ -21,6 +22,11 @@ function formatEventTitle(event) {
 
 function formatStudentLabel(student) {
     return student?.student_label || 'Непознато';
+}
+
+function formatAttendanceSource(student) {
+    const source = String(student?.registration_source || '').toLowerCase();
+    return source === 'android' ? 'android' : 'web';
 }
 
 function renderEventInfo(root, event) {
@@ -105,13 +111,165 @@ function renderRoster(root, students) {
         const list = document.createElement('ol');
         students.forEach((student) => {
             const li = document.createElement('li');
-            li.textContent = formatStudentLabel(student);
+            const label = document.createElement('span');
+            label.textContent = formatStudentLabel(student);
+            li.appendChild(label);
+
+            const source = document.createElement('span');
+            const normalizedSource = formatAttendanceSource(student);
+            source.className = `attendance-source-badge attendance-source-${normalizedSource}`;
+            source.textContent = normalizedSource;
+            li.appendChild(source);
             list.appendChild(li);
         });
         section.appendChild(list);
     }
 
     root.appendChild(section);
+}
+
+function ensureSpotCheckDialog() {
+    let dialog = document.getElementById('attendance-spot-check-dialog');
+    if (dialog) {
+        return dialog;
+    }
+
+    dialog = document.createElement('dialog');
+    dialog.id = 'attendance-spot-check-dialog';
+    dialog.className = 'attendance-dialog';
+
+    const header = document.createElement('div');
+    header.className = 'attendance-dialog-header';
+
+    const titleWrap = document.createElement('div');
+    titleWrap.className = 'attendance-dialog-title-wrap';
+
+    const title = document.createElement('h3');
+    title.id = 'attendance-spot-check-title';
+    title.textContent = 'Провера присуства';
+    titleWrap.appendChild(title);
+
+    const subtitle = document.createElement('p');
+    subtitle.id = 'attendance-spot-check-subtitle';
+    subtitle.className = 'attendance-dialog-subtitle';
+    titleWrap.appendChild(subtitle);
+
+    header.appendChild(titleWrap);
+
+    const closeButton = document.createElement('button');
+    closeButton.type = 'button';
+    closeButton.className = 'attendance-dialog-close';
+    closeButton.textContent = '×';
+    closeButton.setAttribute('aria-label', 'Затвори');
+    closeButton.addEventListener('click', () => dialog.close());
+    header.appendChild(closeButton);
+
+    dialog.appendChild(header);
+
+    const body = document.createElement('div');
+    body.id = 'attendance-spot-check-body';
+    dialog.appendChild(body);
+
+    const footer = document.createElement('div');
+    footer.className = 'attendance-dialog-footer';
+
+    const confirmButton = document.createElement('button');
+    confirmButton.type = 'button';
+    confirmButton.className = 'attendance-summary-btn';
+    confirmButton.id = 'attendance-spot-check-confirm';
+    confirmButton.textContent = 'У реду';
+    footer.appendChild(confirmButton);
+
+    dialog.appendChild(footer);
+    dialog.addEventListener('close', () => {
+        activeSpotCheck = null;
+    });
+
+    document.body.appendChild(dialog);
+    return dialog;
+}
+
+function openSpotCheckDialog(root, kind, eventId, eventDate, event, students) {
+    const dialog = ensureSpotCheckDialog();
+    const subtitle = dialog.querySelector('#attendance-spot-check-subtitle');
+    const body = dialog.querySelector('#attendance-spot-check-body');
+    const confirmButton = dialog.querySelector('#attendance-spot-check-confirm');
+
+    activeSpotCheck = {
+        root,
+        kind,
+        eventId,
+        eventDate,
+        event,
+        students,
+    };
+
+    subtitle.textContent = `${formatEventTitle(event)} • ${formatDateDDMMYYYY(event.event_date || event.reservation_date)}`;
+    body.innerHTML = '';
+
+    if (!students.length) {
+        const empty = document.createElement('p');
+        empty.textContent = 'Нема студената за ручну проверу.';
+        body.appendChild(empty);
+    } else {
+        const list = document.createElement('ul');
+        list.className = 'attendance-spot-check-list';
+        students.forEach((student) => {
+            const item = document.createElement('li');
+            const label = document.createElement('label');
+            label.className = 'attendance-spot-check-item';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.checked = false;
+            checkbox.value = student.username;
+
+            const text = document.createElement('span');
+            text.textContent = formatStudentLabel(student);
+
+            label.appendChild(checkbox);
+            label.appendChild(text);
+            item.appendChild(label);
+            list.appendChild(item);
+        });
+        body.appendChild(list);
+    }
+
+    confirmButton.onclick = async () => {
+        if (!activeSpotCheck) {
+            return;
+        }
+        const selectedUsernames = activeSpotCheck.students.map((student) => student.username);
+        const confirmedUsernames = Array.from(body.querySelectorAll('input[type="checkbox"]:checked'))
+            .map((checkbox) => checkbox.value);
+        confirmButton.disabled = true;
+        try {
+            await API.submitAttendanceSpotCheck(
+                activeSpotCheck.kind,
+                activeSpotCheck.eventId,
+                activeSpotCheck.eventDate,
+                {
+                    selected_usernames: selectedUsernames,
+                    confirmed_usernames: confirmedUsernames,
+                }
+            );
+            activeSpotCheck = null;
+            dialog.close();
+        } catch (error) {
+            const message = error.data?.error || error.message || 'Грешка при чувању провере.';
+            const note = document.createElement('p');
+            note.textContent = message;
+            body.appendChild(note);
+        } finally {
+            confirmButton.disabled = false;
+        }
+    };
+
+    if (typeof dialog.showModal === 'function') {
+        dialog.showModal();
+    } else {
+        dialog.setAttribute('open', 'open');
+    }
 }
 
 function showAccessMessage(root, messageText) {
@@ -150,6 +308,29 @@ async function refresh(root) {
     renderQr(root, joinUrl);
     renderChallenge(root, data.challenge, data.event);
     renderRoster(root, data.students || []);
+
+    if (data.students && data.students.length) {
+        const actions = document.createElement('div');
+        actions.className = 'attendance-session-actions';
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'attendance-summary-btn';
+        button.textContent = 'Провери присуство';
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            try {
+                const shortlist = await API.getAttendanceSpotCheck(kind, eventId, eventDate, 5);
+                openSpotCheckDialog(root, kind, eventId, eventDate, shortlist.event || data.event, shortlist.students || []);
+            } catch (error) {
+                window.alert(error.data?.error || error.message || 'Грешка при учитавању провере присуства.');
+            } finally {
+                button.disabled = false;
+            }
+        });
+        actions.appendChild(button);
+        root.appendChild(actions);
+    }
 
     const note = document.createElement('p');
     note.className = 'attendance-note';
