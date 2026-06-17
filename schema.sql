@@ -92,3 +92,39 @@ CREATE TABLE attendance_session_failures (
     blocked INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE TABLE students (
+    username TEXT PRIMARY KEY,
+    student_index TEXT NOT NULL,
+    surname TEXT NOT NULL,
+    given_name TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_students_student_index ON students(student_index);
+CREATE TABLE mobile_auth_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    radius_username TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE mobile_auth_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    device_name TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    revoked_at TEXT,
+    revoked_reason TEXT,
+    FOREIGN KEY(user_id) REFERENCES mobile_auth_users(id)
+);
+CREATE INDEX idx_mobile_auth_sessions_user_id ON mobile_auth_sessions(user_id);
+CREATE INDEX idx_mobile_auth_sessions_token_hash ON mobile_auth_sessions(token_hash);
+CREATE TABLE mobile_auth_device_login_policies (
+    device_id TEXT PRIMARY KEY,
+    last_username TEXT NOT NULL,
+    last_login_date TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_mobile_auth_device_login_policies_login_date ON mobile_auth_device_login_policies(last_login_date);

@@ -82,6 +82,9 @@ def enforce_csrf():
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
 
+    if request.path.startswith("/auth/"):
+        return None
+
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
         return None
@@ -228,7 +231,7 @@ def radius_auth(username, password):
     return reply.code == pyrad.packet.AccessAccept
 
 
-def student_radius_auth(username, password):
+def student_radius_auth(username, password, raise_on_error=False):
     """Authenticate a student against the configured student RADIUS backend."""
     if STUDENT_AUTH_BACKEND != "radius":
         return radius_auth_mock(username, password)
@@ -247,6 +250,8 @@ def student_radius_auth(username, password):
     try:
         reply = client.SendPacket(req)
     except Exception:
+        if raise_on_error:
+            raise
         return False
 
     return reply.code == pyrad.packet.AccessAccept

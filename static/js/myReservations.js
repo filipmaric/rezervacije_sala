@@ -54,8 +54,12 @@ function escapeCsvValue(value) {
 
 function buildAttendanceSummaryCsv(summaryEntries) {
     const rows = [
-        ['Корисничко име', 'Име', 'Број присустава'],
-        ...summaryEntries.map((entry) => [entry.username, '', entry.count]),
+        ['Име и презиме', 'Индекс', 'Број присустава'],
+        ...summaryEntries.map((entry) => [
+            entry.student_name || 'Непознато',
+            entry.student_index || '',
+            entry.count,
+        ]),
     ];
     return '\ufeff' + rows.map((row) => row.map(escapeCsvValue).join(';')).join('\n');
 }
@@ -81,7 +85,7 @@ function renderEmptyMessage(container, message) {
 
 function createAttendanceListItem(student) {
     const li = document.createElement('li');
-    li.textContent = `${student.username} (${student.created_at})`;
+    li.textContent = student.student_label || 'Непознато';
     return li;
 }
 
@@ -155,7 +159,8 @@ function openAttendanceDialog(date, students) {
         downloadButton.onclick = () => {
             const csv = buildAttendanceSummaryCsv(
                 students.map((student) => ({
-                    username: student.username,
+                    student_name: student.student_name,
+                    student_index: student.student_index,
                     count: 1,
                 }))
             );
@@ -216,7 +221,7 @@ function openAttendanceSummaryDialog(courseLabel, sessionLabel, summaryEntries) 
         const table = document.createElement('table');
         const thead = document.createElement('thead');
         const headerRow = document.createElement('tr');
-        ['Корисничко име', 'Име', 'Број присустава'].forEach((label) => {
+        ['Име и презиме', 'Индекс', 'Број присустава'].forEach((label) => {
             const th = document.createElement('th');
             th.textContent = label;
             headerRow.appendChild(th);
@@ -228,8 +233,8 @@ function openAttendanceSummaryDialog(courseLabel, sessionLabel, summaryEntries) 
         summaryEntries.forEach((entry) => {
             const tr = document.createElement('tr');
             [
-                entry.username,
-                '',
+                entry.student_name || 'Непознато',
+                entry.student_index || '',
                 entry.count,
             ].forEach((value) => {
                 const td = document.createElement('td');
@@ -479,9 +484,17 @@ async function renderCourseSessions(container, courses) {
                     const key = student.username;
                     const current = attendanceTotals.get(key) || {
                         username: student.username,
+                        student_name: student.student_name || '',
+                        student_index: student.student_index || '',
                         count: 0,
                     };
                     current.count += 1;
+                    if (!current.student_name && student.student_name) {
+                        current.student_name = student.student_name;
+                    }
+                    if (!current.student_index && student.student_index) {
+                        current.student_index = student.student_index;
+                    }
                     attendanceTotals.set(key, current);
                 });
             });

@@ -13,6 +13,11 @@ let outsideClassShown = false;
 
 const CHALLENGE_ROUND_MS = 10000;
 
+function buildMainPageUrl() {
+    const basePath = window.APP_CONFIG?.BASE_PATH || '';
+    return `${basePath}/`;
+}
+
 function pad2(value) {
     return String(value).padStart(2, '0');
 }
@@ -238,6 +243,7 @@ function renderChallenge(root, data, state = {}) {
                     pollHandle = null;
                 }
                 successShown = true;
+                root.classList.add('attendance-success-root');
                 root.innerHTML = '';
                 const successPanel = document.createElement('div');
                 successPanel.className = 'attendance-panel attendance-success-panel';
@@ -247,8 +253,19 @@ function renderChallenge(root, data, state = {}) {
                 successPanel.appendChild(success);
 
                 const note = document.createElement('p');
-                note.textContent = 'Можете затворити ову страницу.';
+                note.textContent = 'Пријава је забележена. Можете затворити ову страницу или се вратити на распоред.';
                 successPanel.appendChild(note);
+
+                const actions = document.createElement('div');
+                actions.className = 'attendance-success-actions';
+
+                const homeLink = document.createElement('a');
+                homeLink.href = buildMainPageUrl();
+                homeLink.className = 'attendance-success-home-link';
+                homeLink.textContent = 'Назад на распоред';
+                actions.appendChild(homeLink);
+
+                successPanel.appendChild(actions);
 
                 root.appendChild(successPanel);
             } catch (err) {

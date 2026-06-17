@@ -17,7 +17,12 @@ from config import (
     ATTENDANCE_SESSION_TTL,
 )
 from auth import RATE_LIMITS, check_if_admin, enforce_rate_limit, student_radius_auth
-from db import execute_db, query_db
+from db import (
+    execute_db,
+    mobile_auth_get_session_by_token,
+    mobile_auth_get_user_by_id,
+    query_db,
+)
 
 
 bp = Blueprint("attendance", __name__)
@@ -246,16 +251,44 @@ def attendance_records_for_event(kind, event_id, event_date):
     """Return the students who have already checked in for an event."""
     rows = query_db(
         """
-        SELECT username, created_at
-        FROM attendance_records
+        SELECT ar.username,
+               ar.created_at,
+               s.student_index,
+               s.surname,
+               s.given_name
+        FROM attendance_records ar
+        LEFT JOIN students s ON s.username = ar.username
         WHERE event_kind = ?
-          AND event_id = ?
-          AND event_date = ?
-        ORDER BY created_at, id
+          AND ar.event_id = ?
+          AND ar.event_date = ?
+        ORDER BY ar.created_at, ar.id
         """,
         (kind, event_id, event_date),
     )
-    return [dict(row) for row in rows]
+    students = []
+    for row in rows:
+        given_name = (row["given_name"] or "").strip()
+        surname = (row["surname"] or "").strip()
+        full_name = " ".join(part for part in (given_name, surname) if part).strip()
+        student_index = (row["student_index"] or "").strip()
+        student_label = "Непознато"
+        if full_name and student_index:
+            student_label = f"{full_name} ({student_index})"
+        elif full_name:
+            student_label = full_name
+        elif student_index:
+            student_label = student_index
+
+        students.append(
+            {
+                "username": row["username"],
+                "created_at": row["created_at"],
+                "student_index": student_index or None,
+                "student_name": full_name or None,
+                "student_label": student_label,
+            }
+        )
+    return students
 
 
 def attendance_record_student(kind, event_id, event_date, username):
@@ -427,11 +460,44 @@ def attendance_session_status(kind, event_id, event_date):
     session_token = attendance_session_from_request(kind, event_id, event_date)
     if not session_token:
         return "missing"
+    return attendance_session_status_for_token(kind, event_id, event_date, session_token)
+
+
+def attendance_session_status_for_token(kind, event_id, event_date, session_token):
+    """Classify a supplied attendance session token as valid, blocked, or expired."""
     if attendance_session_is_blocked_raw(session_token):
         return "blocked"
     if not attendance_validate_session_token(kind, event_id, event_date, session_token):
         return "expired"
     return "valid"
+
+
+def attendance_mobile_session_from_request():
+    """Return the Android auth session and user for a bearer-authenticated request."""
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None
+
+    token = auth.split(" ", 1)[1].strip()
+    session = mobile_auth_get_session_by_token(token)
+    if not session or session["revoked_at"] is not None:
+        return None
+
+    try:
+        expires_at = datetime.datetime.fromisoformat(session["expires_at"])
+    except ValueError:
+        return None
+
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=datetime.timezone.utc)
+    if expires_at <= datetime.datetime.now(datetime.timezone.utc):
+        return None
+
+    user = mobile_auth_get_user_by_id(session["user_id"])
+    if not user:
+        return None
+
+    return {"session": session, "user": user}
 
 
 # QR token and attendance-session helpers.
@@ -625,11 +691,17 @@ def attendance_challenge_data(kind, event_id, event_date):
         return jsonify({'error': 'this lecture occurrence is canceled'}), 409
     if not attendance_is_open_now(row):
         return jsonify({'error': attendance_not_open_message()}), 403
-    session_status = attendance_session_status(kind, event_id, event_date)
-    if session_status == "blocked":
-        return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
-    if session_status != "valid":
-        return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
+    mobile_session = attendance_mobile_session_from_request()
+    if mobile_session:
+        join_token = request.args.get("join_token", "").strip()
+        if not attendance_token_is_valid(kind, event_id, event_date, join_token):
+            return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
+    else:
+        session_status = attendance_session_status(kind, event_id, event_date)
+        if session_status == "blocked":
+            return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
+        if session_status != "valid":
+            return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
 
     challenge = attendance_challenge_for_time(kind, event_id, event_date)
     return jsonify({
@@ -689,19 +761,28 @@ def attendance_join_submit(kind, event_id, event_date):
         return jsonify({'error': 'this lecture occurrence is canceled'}), 409
     if not attendance_is_open_now(row):
         return jsonify({'error': attendance_not_open_message()}), 403
-    session_token = attendance_session_from_request(kind, event_id, event_date)
-    session_status = attendance_session_status(kind, event_id, event_date)
-    if session_status == "blocked":
-        return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
-    if session_status != "valid":
-        return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
-
     data = request.get_json() or {}
-    username = data.get('username', '').strip()
-    password = data.get('password', '')
     selected_code = data.get('selected_code')
+    mobile_session = attendance_mobile_session_from_request()
+    if mobile_session:
+        session_token = data.get('join_token', '').strip()
+        if not session_token:
+            return jsonify({'error': 'join token is required'}), 400
+        if not attendance_token_is_valid(kind, event_id, event_date, session_token):
+            return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
+        username = mobile_session["user"]["radius_username"].strip()
+        password = None
+    else:
+        session_token = attendance_session_from_request(kind, event_id, event_date)
+        session_status = attendance_session_status(kind, event_id, event_date)
+        if session_status == "blocked":
+            return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
+        if session_status != "valid":
+            return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
 
-    if not username or not password:
+    if not username or (password is not None and not password):
         return jsonify({'error': 'username and password are required'}), 400
 
     try:
@@ -715,7 +796,7 @@ def attendance_join_submit(kind, event_id, event_date):
             return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
         return jsonify({'error': 'Погрешан број. Сачекајте нови круг.'}), 409
 
-    if not student_radius_auth(username, password):
+    if password is not None and not student_radius_auth(username, password):
         return jsonify({'error': 'Invalid credentials'}), 401
 
     attendance_session_clear_failures(session_token)

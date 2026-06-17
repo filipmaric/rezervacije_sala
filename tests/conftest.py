@@ -92,6 +92,15 @@ class TestDB:
             (name, start, end),
         )
 
+    def student(self, username, student_index, surname, given_name):
+        return self.execute(
+            """
+            INSERT INTO students (username, student_index, surname, given_name, created_at, updated_at)
+            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+            """,
+            (username, student_index, surname, given_name),
+        )
+
     def course_session(self, course_id, teacher_id, semester_id, type="lecture"):
         return self.execute(
             """INSERT INTO course_sessions

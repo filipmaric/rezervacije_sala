@@ -1,3 +1,4 @@
+import datetime
 import time
 import secrets
 
@@ -5,6 +6,7 @@ import app as myapp
 import attendance as attendancemod
 import auth as authmod
 import config as cfg
+import reservations as reservationsmod
 
 
 def login(client, username="alice", password="secret"):
@@ -12,6 +14,12 @@ def login(client, username="alice", password="secret"):
         "/login",
         json={"username": username, "password": password},
     )
+
+
+def freeze_now(monkeypatch):
+    fixed_now = datetime.datetime(2026, 6, 15, 10, 0, 0)
+    monkeypatch.setattr(reservationsmod, "_current_datetime", lambda: fixed_now)
+    return fixed_now
 
 
 def test_login_logout_and_whoami(client):
@@ -227,6 +235,7 @@ def test_attendance_join_and_roster(client, db, monkeypatch):
         start_slot=10,
         end_slot=12,
     )
+    db.student("student1", "1140/2025", "Agildere", "Fritz Ali")
 
     roster = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/data")
     assert roster.status_code == 200
@@ -265,6 +274,45 @@ def test_attendance_join_and_roster(client, db, monkeypatch):
     roster_after_data = roster_after.get_json()
     assert roster_after_data["event"]["course_name"] == "NumericalMethods"
     assert [student["username"] for student in roster_after_data["students"]] == ["student1"]
+    assert roster_after_data["students"][0]["student_index"] == "1140/2025"
+    assert roster_after_data["students"][0]["student_name"] == "Fritz Ali Agildere"
+    assert roster_after_data["students"][0]["student_label"] == "Fritz Ali Agildere (1140/2025)"
+
+
+def test_attendance_roster_uses_unknown_fallback(client, db):
+    login(client, "alice")
+
+    semester = db.semester(
+        name="Current 2026",
+        start="2026-01-01",
+        end="2026-12-31",
+    )
+    room = db.room("R1")
+    teacher = db.teacher("Prof", "alice")
+    course = db.course("NumericalMethods")
+    session = db.course_session(course, teacher, semester)
+    weekly_session_id = db.weekly_session(
+        session_id=session,
+        room_id=room,
+        day_of_week=1,
+        start_slot=10,
+        end_slot=12,
+    )
+
+    db.execute(
+        """
+        INSERT INTO attendance_records (event_kind, event_id, event_date, username)
+        VALUES (?, ?, ?, ?)
+        """,
+        ("weekly", weekly_session_id, "2026-03-09", "ghost_student"),
+    )
+
+    roster = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/data")
+    assert roster.status_code == 200
+    student = roster.get_json()["students"][0]
+    assert student["student_name"] is None
+    assert student["student_index"] is None
+    assert student["student_label"] == "Непознато"
 
 
 def test_attendance_blocked_outside_class_window(client, db, monkeypatch):
@@ -524,8 +572,10 @@ def test_expired_attendance_session_clears_failure_rows(client, db, monkeypatch)
     ) is None
 
 
-def test_reserve_success_and_conflicts(client, db):
+def test_reserve_success_and_conflicts(client, db, monkeypatch):
     room = db.room("R1")
+    future_date = "2026-07-09"
+    freeze_now(monkeypatch)
 
     login(client, "alice")
 
@@ -533,7 +583,7 @@ def test_reserve_success_and_conflicts(client, db):
         "/reserve",
         json={
             "room_id": room,
-            "date": "2026-03-09",
+            "date": future_date,
             "start_slot": 8,
             "end_slot": 10,
             "description": "study",
@@ -546,7 +596,7 @@ def test_reserve_success_and_conflicts(client, db):
         "/reserve",
         json={
             "room_id": room,
-            "date": "2026-03-09",
+            "date": future_date,
             "start_slot": 9,
             "end_slot": 11,
             "description": "overlap",
@@ -565,12 +615,13 @@ def test_reserve_success_and_conflicts(client, db):
         start_slot=12,
         end_slot=14,
     )
+    monkeypatch.setattr(reservationsmod, "check_day", lambda date: (True, 0, 1))
 
     r = client.post(
         "/reserve",
         json={
             "room_id": room,
-            "date": "2026-03-09",
+            "date": future_date,
             "start_slot": 12,
             "end_slot": 13,
             "description": "weekly conflict",
@@ -580,6 +631,71 @@ def test_reserve_success_and_conflicts(client, db):
 
     r = client.delete(f"/reservation/{first_id}")
     assert r.status_code == 200
+
+
+def test_delete_reservation_current_allowed_until_end_when_no_attendance(client, db, monkeypatch):
+    room = db.room("R1")
+    res_id = db.reservation(
+        room_id=room,
+        date="2026-06-15",
+        start=8,
+        end=12,
+        description="current meeting",
+        username="owner",
+    )
+
+    freeze_now(monkeypatch)
+    login(client, "owner")
+    r = client.delete(f"/reservation/{res_id}")
+    assert r.status_code == 200
+    assert r.get_json() == {"success": True}
+
+
+def test_delete_reservation_current_blocked_when_attendance_exists(client, db, monkeypatch):
+    room = db.room("R1")
+    res_id = db.reservation(
+        room_id=room,
+        date="2026-06-15",
+        start=8,
+        end=12,
+        description="current meeting",
+        username="owner",
+    )
+    db.execute(
+        """
+        INSERT INTO attendance_records (event_kind, event_id, event_date, username)
+        VALUES (?, ?, ?, ?)
+        """,
+        ("reservation", res_id, "2026-06-15", "student1"),
+    )
+
+    freeze_now(monkeypatch)
+    login(client, "owner")
+    r = client.delete(f"/reservation/{res_id}")
+    assert r.status_code == 409
+    assert r.get_json() == {
+        "error": "Reservations can be canceled only before the end time and only if attendance has not been recorded."
+    }
+
+
+def test_delete_reservation_past_blocked(client, db, monkeypatch):
+    room = db.room("R1")
+    res_id = db.reservation(
+        room_id=room,
+        date="2026-06-14",
+        start=8,
+        end=10,
+        description="past meeting",
+        username="owner",
+    )
+
+    freeze_now(monkeypatch)
+    login(client, "owner")
+    r = client.delete(f"/reservation/{res_id}")
+    assert r.status_code == 409
+    assert r.get_json() == {
+        "error": "Reservations can be canceled only before the end time and only if attendance has not been recorded."
+    }
 
 
 def test_reserve_validation_errors(client, db):
@@ -648,17 +764,18 @@ def test_admin_can_set_username_on_reserve(client, db):
     assert occupancy["rooms"]["1"][0]["username"] == "other.user"
 
 
-def test_delete_reservation_permissions(client, db):
+def test_delete_reservation_permissions(client, db, monkeypatch):
     room = db.room("R1")
     res_id = db.reservation(
         room_id=room,
-        date="2026-03-09",
+        date="2026-07-09",
         start=8,
         end=10,
         description="meeting",
         username="owner",
     )
 
+    freeze_now(monkeypatch)
     login(client, "other")
     r = client.delete(f"/reservation/{res_id}")
     assert r.status_code == 403
@@ -671,17 +788,18 @@ def test_delete_reservation_permissions(client, db):
     assert r.get_json() == {"success": True}
 
 
-def test_delete_reservation_unauthorized(client, db):
+def test_delete_reservation_unauthorized(client, db, monkeypatch):
     room = db.room("R1")
     res_id = db.reservation(
         room_id=room,
-        date="2026-03-09",
+        date="2026-07-09",
         start=8,
         end=10,
         description="meeting",
         username="owner",
     )
 
+    freeze_now(monkeypatch)
     r = client.delete(f"/reservation/{res_id}")
     assert r.status_code == 401
     assert r.get_json() == {"error": "Unauthorized"}
@@ -883,7 +1001,7 @@ def test_reservation_rate_limit(client, db, monkeypatch):
     assert r.get_json() == {"error": "Too many requests"}
 
 
-def test_weekly_session_cancel_and_conflict(client, db):
+def test_weekly_session_cancel_and_conflict(client, db, monkeypatch):
     room = db.room("R1")
     teacher = db.teacher("Prof", "prof")
     course = db.course("NumericalMethods")
@@ -898,10 +1016,13 @@ def test_weekly_session_cancel_and_conflict(client, db):
     )
 
     login(client, "prof")
+    freeze_now(monkeypatch)
+    future_date = "2026-06-22"
+    monkeypatch.setattr(reservationsmod, "check_day", lambda date: (True, 0, 1))
 
     r = client.post(
         "/weekly_session_cancel",
-        json={"weekly_session_id": weekly_id, "date": "2026-03-09"},
+        json={"weekly_session_id": weekly_id, "date": future_date},
     )
     assert r.status_code == 200
     assert r.get_json() == {"success": True, "canceled": True}
@@ -910,7 +1031,7 @@ def test_weekly_session_cancel_and_conflict(client, db):
         "/reserve",
         json={
             "room_id": room,
-            "date": "2026-03-09",
+            "date": future_date,
             "start_slot": 2,
             "end_slot": 4,
             "description": "occupy slot",
@@ -920,9 +1041,68 @@ def test_weekly_session_cancel_and_conflict(client, db):
 
     r = client.post(
         "/weekly_session_cancel",
-        json={"weekly_session_id": weekly_id, "date": "2026-03-09"},
+        json={"weekly_session_id": weekly_id, "date": future_date},
     )
     assert r.status_code == 409
+
+
+def test_weekly_session_cancel_current_allowed_until_end_when_no_attendance(client, db, monkeypatch):
+    teacher = db.teacher("Prof", "prof")
+    course = db.course("NumericalMethods")
+    semester = db.semester()
+    session = db.course_session(course, teacher, semester)
+    weekly_id = db.weekly_session(
+        session_id=session,
+        room_id=db.room("R1"),
+        day_of_week=1,
+        start_slot=2,
+        end_slot=12,
+    )
+
+    login(client, "prof")
+    freeze_now(monkeypatch)
+    monkeypatch.setattr(reservationsmod, "check_day", lambda date: (True, 0, 1))
+
+    r = client.post(
+        "/weekly_session_cancel",
+        json={"weekly_session_id": weekly_id, "date": "2026-06-15"},
+    )
+    assert r.status_code == 200
+    assert r.get_json() == {"success": True, "canceled": True}
+
+
+def test_weekly_session_cancel_current_blocked_when_attendance_exists(client, db, monkeypatch):
+    teacher = db.teacher("Prof", "prof")
+    course = db.course("NumericalMethods")
+    semester = db.semester()
+    session = db.course_session(course, teacher, semester)
+    weekly_id = db.weekly_session(
+        session_id=session,
+        room_id=db.room("R1"),
+        day_of_week=1,
+        start_slot=2,
+        end_slot=12,
+    )
+    db.execute(
+        """
+        INSERT INTO attendance_records (event_kind, event_id, event_date, username)
+        VALUES (?, ?, ?, ?)
+        """,
+        ("weekly", weekly_id, "2026-06-15", "student1"),
+    )
+
+    login(client, "prof")
+    freeze_now(monkeypatch)
+    monkeypatch.setattr(reservationsmod, "check_day", lambda date: (True, 0, 1))
+
+    r = client.post(
+        "/weekly_session_cancel",
+        json={"weekly_session_id": weekly_id, "date": "2026-06-15"},
+    )
+    assert r.status_code == 409
+    assert r.get_json() == {
+        "error": "Weekly classes can be canceled only before the end time and only if attendance has not been recorded."
+    }
 
 
 def test_weekly_session_cancel_validation(client, db):

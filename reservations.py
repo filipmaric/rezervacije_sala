@@ -155,6 +155,53 @@ def bulk_reservations():
 # Reservation cancellation endpoints.
 
 
+def _current_datetime():
+    """Return the current server datetime."""
+    return datetime.datetime.now()
+
+
+def _attendance_count_for_event(kind, event_id, event_date):
+    """Count attendance rows for one event occurrence."""
+    row = query_db(
+        """
+        SELECT COUNT(*) AS count
+        FROM attendance_records
+        WHERE event_kind = ?
+          AND event_id = ?
+          AND event_date = ?
+        """,
+        (kind, event_id, event_date),
+        one=True,
+    )
+    return int(row["count"]) if row else 0
+
+
+# Cancellation is allowed only for future events, or for today's event
+# while it is still running and no attendance has been recorded yet.
+def _can_cancel_on_date(date_str, end_slot, attendance_count, now=None):
+    """Return True when the event is still cancelable."""
+    try:
+        date = datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return False
+    if attendance_count > 0:
+        return False
+
+    now = now or _current_datetime()
+    if date > now.date():
+        return True
+    if date < now.date():
+        return False
+
+    try:
+        end_hour = int(end_slot)
+    except (TypeError, ValueError):
+        return False
+
+    deadline = datetime.datetime.combine(date, datetime.time(hour=end_hour))
+    return now < deadline
+
+
 @bp.route('/reservation/<int:res_id>', methods=['DELETE'])
 @login_or_service_required
 def cancel_reservation(res_id):
@@ -164,13 +211,22 @@ def cancel_reservation(res_id):
         return limited
 
     # Check whether the reservation exists and belongs to the current user
-    row = query_db('SELECT username FROM reservations WHERE id = ?', (res_id,), one=True)
+    row = query_db('SELECT username, date, end_slot FROM reservations WHERE id = ?', (res_id,), one=True)
     if not row:
         return jsonify({'error':'Reservation not found'}), 404
 
     is_service = getattr(g, "service_auth", False)
     if not is_service and row['username'] != current_user.username and not check_if_admin(current_user.username):
         return jsonify({'error':'Forbidden'}), 403
+
+    if not _can_cancel_on_date(
+        row['date'],
+        row['end_slot'],
+        _attendance_count_for_event('reservation', res_id, row['date']),
+    ):
+        return jsonify({
+            'error': 'Reservations can be canceled only before the end time and only if attendance has not been recorded.'
+        }), 409
 
     # Delete the reservation
     execute_db('DELETE FROM reservations WHERE id = ?', (res_id,))
@@ -228,6 +284,15 @@ def cancel_weekly_session_for_date():
 
     if not row:
         return jsonify({'error': 'weekly session not found for given date'}), 404
+
+    if not _can_cancel_on_date(
+        date,
+        row['end_slot'],
+        _attendance_count_for_event('weekly', ws_id, date),
+    ):
+        return jsonify({
+            'error': 'Weekly classes can be canceled only before the end time and only if attendance has not been recorded.'
+        }), 409
 
     is_service = getattr(g, "service_auth", False)
 

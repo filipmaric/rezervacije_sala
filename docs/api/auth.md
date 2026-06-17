@@ -3,6 +3,8 @@
 This module owns browser authentication, teacher RADIUS login, student RADIUS authentication,
 CSRF protection, and the in-memory rate limiter.
 
+For the Android bearer-token API, see [`mobile_auth`](mobile_auth.md).
+
 It also exposes the small set of auth-related routes:
 
 - `POST /login`

@@ -152,6 +152,14 @@ export STUDENT_RADIUS_DICTIONARY=/path/to/dictionary
 
 The challenge generator uses `ATTENDANCE_SECRET` if you want to override the default signing secret.
 
+If you have `aktivniStudenti.csv` and want to load it into the local student directory, run:
+
+```bash
+python scripts/import_students.py app.db --csv-file aktivniStudenti.csv
+```
+
+The importer creates the `students` table automatically if it does not already exist.
+
 ## Timetable Import Tools
 
 The repository also includes two utility scripts for timetable data in the underscore-separated format:

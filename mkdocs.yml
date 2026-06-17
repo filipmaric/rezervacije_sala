@@ -11,6 +11,7 @@ nav:
   - API Reference:
       - Overview: api.md
       - auth: api/auth.md
+      - mobile_auth: api/mobile_auth.md
       - attendance: api/attendance.md
       - occupancy: api/occupancy.md
       - calendar_views: api/calendar_views.md

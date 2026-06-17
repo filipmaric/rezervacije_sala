@@ -1,8 +1,10 @@
 """SQLite database helpers for the classroom reservation app."""
 
+import hashlib
 import os
 import sqlite3
 import sys
+from datetime import datetime, timedelta, timezone
 
 from flask import g
 
@@ -65,6 +67,95 @@ def _ensure_attendance_schema(conn):
     conn.commit()
 
 
+def _ensure_mobile_auth_schema(conn):
+    """Create the Android auth tables if they are missing."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS mobile_auth_users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            radius_username TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS mobile_auth_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            device_id TEXT NOT NULL,
+            device_name TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            last_seen_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            revoked_at TEXT,
+            revoked_reason TEXT,
+            FOREIGN KEY(user_id) REFERENCES mobile_auth_users(id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mobile_auth_sessions_user_id
+            ON mobile_auth_sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_mobile_auth_sessions_token_hash
+            ON mobile_auth_sessions(token_hash);
+
+        CREATE TABLE IF NOT EXISTS mobile_auth_device_login_policies (
+            device_id TEXT PRIMARY KEY,
+            last_username TEXT NOT NULL,
+            last_login_date TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mobile_auth_device_login_policies_login_date
+            ON mobile_auth_device_login_policies(last_login_date);
+        """
+    )
+    conn.commit()
+
+
+def _ensure_student_directory_schema(conn):
+    """Create the student directory table if it is missing."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS students (
+            username TEXT PRIMARY KEY,
+            student_index TEXT NOT NULL,
+            surname TEXT NOT NULL,
+            given_name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_students_student_index
+            ON students(student_index);
+        """
+    )
+    conn.commit()
+
+
+def _ensure_extra_schemas(conn):
+    """Create the add-on tables used by attendance and Android auth."""
+    _ensure_attendance_schema(conn)
+    _ensure_mobile_auth_schema(conn)
+    _ensure_student_directory_schema(conn)
+
+
+def ensure_student_directory_schema(conn):
+    """Public helper used by import scripts to ensure the student directory exists."""
+    _ensure_student_directory_schema(conn)
+
+
+def _utcnow():
+    """Return the current UTC timestamp."""
+    return datetime.now(timezone.utc)
+
+
+def _isoformat(dt):
+    """Render a UTC timestamp in ISO 8601 format."""
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def hash_token(token):
+    """Hash an opaque bearer token before storing it in SQLite."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
 def init_app(app):
     """Register database teardown hooks on the Flask application."""
     app.teardown_appcontext(close_connection)
@@ -79,6 +170,7 @@ def init_db(conn=None):
 
     try:
         if _database_has_schema(conn):
+            _ensure_extra_schemas(conn)
             return False
 
         schema_path = _schema_path()
@@ -87,7 +179,7 @@ def init_db(conn=None):
 
         with open(schema_path, encoding="utf-8") as f:
             conn.executescript(f.read())
-        _ensure_attendance_schema(conn)
+        _ensure_extra_schemas(conn)
         conn.commit()
         return True
     finally:
@@ -106,7 +198,7 @@ def get_db():
         # ensure foreign keys are enforced
         db.execute("PRAGMA foreign_keys = ON;")
         init_db(db)
-        _ensure_attendance_schema(db)
+        _ensure_extra_schemas(db)
     return db
 
 
@@ -132,3 +224,199 @@ def execute_db(query, args=(), commit=True):
     if commit:
         conn.commit()
     return cur.lastrowid
+
+
+def mobile_auth_get_or_create_user(radius_username):
+    """Return the Android-auth user row for a RADIUS username."""
+    now = _isoformat(_utcnow())
+    conn = get_db()
+    row = conn.execute(
+        "SELECT id, radius_username FROM mobile_auth_users WHERE radius_username = ?",
+        (radius_username,),
+    ).fetchone()
+    if row is None:
+        cur = conn.execute(
+            "INSERT INTO mobile_auth_users (radius_username, created_at) VALUES (?, ?)",
+            (radius_username, now),
+        )
+        conn.commit()
+        user_id = int(cur.lastrowid)
+        row = conn.execute(
+            "SELECT id, radius_username FROM mobile_auth_users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+    return row
+
+
+def mobile_auth_get_user_by_id(user_id):
+    """Return a mobile-auth user row by id."""
+    return query_db(
+        "SELECT id, radius_username FROM mobile_auth_users WHERE id = ?",
+        (user_id,),
+        one=True,
+    )
+
+
+def mobile_auth_get_device_login_policy(device_id):
+    """Return the latest username recorded for a device."""
+    return query_db(
+        """
+        SELECT device_id, last_username, last_login_date, updated_at
+        FROM mobile_auth_device_login_policies
+        WHERE device_id = ?
+        """,
+        (device_id,),
+        one=True,
+    )
+
+
+def mobile_auth_assert_device_login_allowed(device_id, username):
+    """Reject a different username on the same device within one UTC day."""
+    policy = mobile_auth_get_device_login_policy(device_id)
+    if policy is None:
+        return
+
+    current_day = _utcnow().date().isoformat()
+    if policy["last_login_date"] == current_day and policy["last_username"] != username.strip():
+        raise RuntimeError(
+            f'This phone is already used by "{policy["last_username"]}" today. Try again tomorrow.'
+        )
+
+
+def mobile_auth_record_device_login(device_id, username):
+    """Persist the username that last logged in from a device."""
+    now = _isoformat(_utcnow())
+    current_day = _utcnow().date().isoformat()
+    conn = get_db()
+    conn.execute(
+        """
+        INSERT INTO mobile_auth_device_login_policies (
+            device_id, last_username, last_login_date, updated_at
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(device_id) DO UPDATE SET
+            last_username = excluded.last_username,
+            last_login_date = excluded.last_login_date,
+            updated_at = excluded.updated_at
+        """,
+        (device_id, username.strip(), current_day, now),
+    )
+    conn.commit()
+    return mobile_auth_get_device_login_policy(device_id)
+
+
+def mobile_auth_revoke_active_sessions(user_id, reason, exclude_session_id=None):
+    """Revoke all active Android sessions for a user."""
+    now = _isoformat(_utcnow())
+    sql = """
+        UPDATE mobile_auth_sessions
+        SET revoked_at = ?, revoked_reason = ?
+        WHERE user_id = ?
+          AND revoked_at IS NULL
+          AND expires_at > ?
+    """
+    params = [now, reason, user_id, now]
+    if exclude_session_id is not None:
+        sql += " AND id != ?"
+        params.append(exclude_session_id)
+    conn = get_db()
+    cur = conn.execute(sql, params)
+    conn.commit()
+    return int(cur.rowcount)
+
+
+def mobile_auth_create_session(user_id, device_id, device_name, token_hash, session_days):
+    """Create a new Android session and return the stored row."""
+    now = _utcnow()
+    created_at = _isoformat(now)
+    expires_at = _isoformat(now + timedelta(days=session_days))
+    conn = get_db()
+    cur = conn.execute(
+        """
+        INSERT INTO mobile_auth_sessions (
+            user_id, device_id, device_name, token_hash,
+            created_at, last_seen_at, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        (user_id, device_id, device_name, token_hash, created_at, created_at, expires_at),
+    )
+    conn.commit()
+    return mobile_auth_get_session_by_id(int(cur.lastrowid))
+
+
+def mobile_auth_touch_session(session_id):
+    """Refresh the last-seen timestamp for an Android session."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE mobile_auth_sessions SET last_seen_at = ? WHERE id = ?",
+        (_isoformat(_utcnow()), session_id),
+    )
+    conn.commit()
+    return mobile_auth_get_session_by_id(session_id)
+
+
+def mobile_auth_revoke_session(session_id, reason):
+    """Mark an Android session as revoked."""
+    conn = get_db()
+    conn.execute(
+        "UPDATE mobile_auth_sessions SET revoked_at = ?, revoked_reason = ? WHERE id = ?",
+        (_isoformat(_utcnow()), reason, session_id),
+    )
+    conn.commit()
+
+
+def mobile_auth_get_session_by_token(token):
+    """Find an Android session by its raw bearer token."""
+    token_hash = hash_token(token)
+    return query_db(
+        "SELECT * FROM mobile_auth_sessions WHERE token_hash = ?",
+        (token_hash,),
+        one=True,
+    )
+
+
+def mobile_auth_get_session_by_id(session_id):
+    """Find an Android session by id."""
+    return query_db(
+        "SELECT * FROM mobile_auth_sessions WHERE id = ?",
+        (session_id,),
+        one=True,
+    )
+
+
+def student_identity_for_username(username):
+    """Return the stored student identity for one username or a fallback label."""
+    row = query_db(
+        """
+        SELECT username, student_index, surname, given_name
+        FROM students
+        WHERE username = ?
+        """,
+        (username,),
+        one=True,
+    )
+    if not row:
+        return {
+            "username": username,
+            "student_index": None,
+            "student_name": None,
+            "student_label": "Непознато",
+        }
+
+    given_name = (row["given_name"] or "").strip()
+    surname = (row["surname"] or "").strip()
+    full_name = " ".join(part for part in (given_name, surname) if part).strip()
+    student_index = (row["student_index"] or "").strip()
+    student_label = "Непознато"
+    if full_name and student_index:
+        student_label = f"{full_name} ({student_index})"
+    elif full_name:
+        student_label = full_name
+    elif student_index:
+        student_label = student_index
+
+    return {
+        "username": row["username"],
+        "student_index": student_index or None,
+        "student_name": full_name or None,
+        "student_label": student_label,
+    }

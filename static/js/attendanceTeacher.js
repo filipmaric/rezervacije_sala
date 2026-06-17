@@ -19,6 +19,10 @@ function formatEventTitle(event) {
     return event.description || 'Резервација';
 }
 
+function formatStudentLabel(student) {
+    return student?.student_label || 'Непознато';
+}
+
 function renderEventInfo(root, event) {
     const info = document.createElement('div');
     info.className = 'attendance-panel';
@@ -101,7 +105,7 @@ function renderRoster(root, students) {
         const list = document.createElement('ol');
         students.forEach((student) => {
             const li = document.createElement('li');
-            li.textContent = `${student.username} (${student.created_at})`;
+            li.textContent = formatStudentLabel(student);
             list.appendChild(li);
         });
         section.appendChild(list);

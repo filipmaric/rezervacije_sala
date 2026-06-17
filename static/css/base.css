@@ -239,6 +239,33 @@ body {
     font-weight: 600;
 }
 
+.attendance-success-actions {
+    margin-top: 14px;
+    display: flex;
+    justify-content: center;
+}
+
+.attendance-success-home-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 0 12px;
+    border: 1px solid #b9e2bf;
+    border-radius: 4px;
+    background: #f5fbf5;
+    color: #235d2d;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.attendance-success-home-link:hover,
+.attendance-success-home-link:focus {
+    background: #e9f5ea;
+    color: #1d4d25;
+    text-decoration: none;
+}
+
 .attendance-blocked-panel h2 {
     margin-bottom: 8px;
 }
@@ -546,6 +573,24 @@ body {
     gap: 10px;
 }
 
+.attendance-success-root {
+    min-height: calc(100vh - 140px);
+    justify-content: center;
+}
+
+.attendance-success-root .attendance-success-panel {
+    max-width: 520px;
+    margin: 0 auto;
+}
+
+.attendance-success-root .attendance-success-panel h2 {
+    font-size: 1.35rem;
+}
+
+.attendance-success-root .attendance-success-panel p {
+    font-size: 1rem;
+}
+
 .student-attendance-shell .attendance-panel,
 .student-attendance-shell .challenge-panel {
     width: 100%;
@@ -604,6 +649,27 @@ body {
 
     .student-attendance-shell .challenge-panel input {
         padding: 11px 13px;
+    }
+
+    .attendance-success-panel {
+        padding: 18px 14px;
+    }
+
+    .attendance-success-panel h2 {
+        font-size: 1.2rem;
+    }
+
+    .attendance-success-panel p {
+        font-size: 0.98rem;
+    }
+
+    .attendance-success-home-link {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .attendance-success-root {
+        min-height: calc(100vh - 110px);
     }
 }
 

@@ -1,3 +1,6 @@
+from datetime import datetime, timedelta
+
+
 def login(client, username="alice", password="secret"):
     return client.post(
         "/login",
@@ -27,10 +30,15 @@ def test_my_reservations_template(client):
 def test_attendance_templates(client, db):
     login(client, "alice")
 
+    now = datetime.now()
+    event_date = now.date().isoformat()
+    start_slot = max(0, now.hour - 1)
+    end_slot = min(23, start_slot + 2)
+
     semester = db.semester(
         name="Current 2026",
-        start="2026-01-01",
-        end="2026-12-31",
+        start=event_date,
+        end=(now + timedelta(days=1)).date().isoformat(),
     )
     room = db.room("R1")
     teacher = db.teacher("Prof", "alice")
@@ -39,21 +47,21 @@ def test_attendance_templates(client, db):
     weekly_session_id = db.weekly_session(
         session_id=session,
         room_id=room,
-        day_of_week=1,
-        start_slot=10,
-        end_slot=12,
+        day_of_week=now.weekday(),
+        start_slot=start_slot,
+        end_slot=end_slot,
     )
 
-    roster = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/data")
+    roster = client.get(f"/attendance/weekly/{weekly_session_id}/{event_date}/data")
     assert roster.status_code == 200
     token = roster.get_json()["join_token"]
 
-    r = client.get("/attendance/weekly/1/2026-03-09")
+    r = client.get(f"/attendance/weekly/1/{event_date}")
     assert r.status_code == 200
     assert "Присуство на часу" in r.get_data(as_text=True)
 
     r = client.get(
-        f"/attendance/weekly/{weekly_session_id}/2026-03-09/join/{token}",
+        f"/attendance/weekly/{weekly_session_id}/{event_date}/join/{token}",
         follow_redirects=True,
     )
     assert r.status_code == 200

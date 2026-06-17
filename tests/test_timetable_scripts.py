@@ -350,3 +350,38 @@ def test_update_timetable_reports_conflicts_and_can_be_confirmed(tmp_path):
         """,
     )
     assert row["room_code"] == "407"
+
+
+def test_import_students_populates_directory(tmp_path):
+    db_path = tmp_path / "students.db"
+    csv_path = tmp_path / "aktivniStudenti.csv"
+
+    with csv_path.open("w", encoding="utf-16", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(["Индекс", "Презиме", "Име", "Кориснички налог"])
+        writer.writerow(["1140/2025", "Agildere", "Fritz Ali", "em251140"])
+        writer.writerow(["2020/2022", "Elmarghani", "Rowaida", "pd222020"])
+
+    result = run_script(
+        [
+            "scripts/import_students.py",
+            str(db_path),
+            "--csv-file",
+            str(csv_path),
+        ]
+    )
+    assert "Imported 2 students" in result.stdout
+
+    rows = fetch_all(
+        db_path,
+        """
+        SELECT username, student_index, surname, given_name
+        FROM students
+        ORDER BY username
+        """,
+    )
+    assert len(rows) == 2
+    assert rows[0]["username"] == "em251140"
+    assert rows[0]["student_index"] == "1140/2025"
+    assert rows[0]["surname"] == "Agildere"
+    assert rows[0]["given_name"] == "Fritz Ali"

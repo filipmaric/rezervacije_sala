@@ -10,6 +10,7 @@ from config import (
     APPLICATION_ROOT,
     IS_PRODUCTION,
     LOG_FILE,
+    MOBILE_AUTH_SESSION_DAYS,
     SECRET_KEY,
 )
 from config import (
@@ -32,6 +33,7 @@ def create_app():
     app = Flask(__name__, static_url_path=STATIC_URL_PATH)
     app.config["APPLICATION_ROOT"] = APPLICATION_ROOT
     app.config["SERVICE_API_KEY"] = SERVICE_API_KEY
+    app.config["MOBILE_AUTH_SESSION_DAYS"] = MOBILE_AUTH_SESSION_DAYS
     app.secret_key = SECRET_KEY
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     init_db_app(app)

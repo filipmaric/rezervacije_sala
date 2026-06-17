@@ -3,6 +3,7 @@ Flask app entry point and route registration.
 
 Route overview:
 - Authentication: /login, /logout, /whoami, /is_admin/<username>
+- Android auth: /auth/login, /auth/logout, /auth/me, /auth/sessions, /healthz
 - Frontend: /
 - Rooms and occupancy: /rooms, /occupancy
 - Reservation writes: /reserve, /reserve/bulk, /reservation/<id>, /weekly_session_cancel
@@ -24,6 +25,7 @@ app = create_app()
 import main as main_mod  # noqa: E402,F401 - registers the main page route on import
 import auth  # noqa: E402,F401 - registers auth routes and helpers on import
 from auth import *  # noqa: F401,F403,E402 - re-export auth helpers and routes
+import mobile_auth as mobile_auth_mod  # noqa: E402,F401 - registers Android auth routes on import
 
 auth.init_app(app)
 
@@ -42,6 +44,7 @@ from semester import *  # noqa: F401,F403,E402 - re-export semester helpers for 
 from reservations_views import *  # noqa: F401,F403,E402 - re-export semester/personal-reservation helpers for tests and callers
 
 app.register_blueprint(auth.bp)
+app.register_blueprint(mobile_auth_mod.bp)
 app.register_blueprint(main_mod.bp)
 app.register_blueprint(occupancy_mod.bp)
 app.register_blueprint(attendance_mod.bp)

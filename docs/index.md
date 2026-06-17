@@ -12,6 +12,7 @@ This site documents the classroom reservation app, its deployment setup, and the
 ## Module Map
 
 - `auth.py`: login, logout, CSRF, and rate limiting
+- `mobile_auth.py`: Android bearer-token auth backed by student RADIUS
 - `attendance.py`: QR attendance and check-in flows
 - `occupancy.py`: room list and occupancy reads
 - `calendar_views.py`: calendar metadata and updates
