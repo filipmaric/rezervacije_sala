@@ -7,12 +7,14 @@ This site documents the classroom reservation app, its deployment setup, and the
 - [Setup](setup.md) for a fresh clone
 - [Production](deployment.md) for `systemd` deployment
 - [Attendance](attendance.md) for QR attendance flow
+- [Mobile client contract](mobile_client.md) for an iOS or other native mobile port
 - [API reference](api.md) for the module-level Python API docs
 
 ## Module Map
 
 - `auth.py`: login, logout, CSRF, and rate limiting
 - `mobile_auth.py`: Android bearer-token auth backed by student RADIUS
+- `mobile_attendance.py`: mobile attendance history summaries
 - `attendance.py`: QR attendance and check-in flows
 - `occupancy.py`: room list and occupancy reads
 - `calendar_views.py`: calendar metadata and updates

@@ -8,10 +8,12 @@ nav:
   - Setup: setup.md
   - Production: deployment.md
   - Attendance: attendance.md
+  - Mobile Client Contract: mobile_client.md
   - API Reference:
       - Overview: api.md
       - auth: api/auth.md
       - mobile_auth: api/mobile_auth.md
+      - mobile_attendance: api/mobile_attendance.md
       - attendance: api/attendance.md
       - occupancy: api/occupancy.md
       - calendar_views: api/calendar_views.md

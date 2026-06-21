@@ -6,6 +6,7 @@ This section links to the Python modules that implement the behavior behind thos
 
 - `auth.py` for login, logout, CSRF, and rate limiting
 - `mobile_auth.py` for Android bearer-token auth
+- `mobile_attendance.py` for the current-semester attendance summary used by mobile clients
 - `attendance.py` for QR attendance and check-in flows
 - `occupancy.py` for room list and occupancy reads
 - `calendar_views.py` for calendar metadata and updates
@@ -28,6 +29,8 @@ curl -i -H "Content-Type: application/json" \
 curl -i -H "Content-Type: application/json" \
   -d '{"username":"student","password":"secret","device_id":"phone-1","device_name":"Android"}' \
   http://127.0.0.1:5000/auth/login
+curl -i -H "Authorization: Bearer <token>" \
+  http://127.0.0.1:5000/mobile/attendance/history
 curl -i "http://127.0.0.1:5000/my_reservations_data"
 curl -i "http://127.0.0.1:5000/calendar_data?month=3&year=2026"
 ```
@@ -40,3 +43,6 @@ The student page uses:
 
 - `GET /attendance/<kind>/<event_id>/<event_date>/challenge`
 - `POST /attendance/<kind>/<event_id>/<event_date>/join`
+
+For a client-facing mobile contract with exact request/response examples, see
+[Mobile Client Contract](mobile_client.md).

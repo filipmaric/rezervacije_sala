@@ -12,6 +12,8 @@ It reuses the student RADIUS settings from `config.py`, stores opaque bearer tok
 and blocks a different username from logging in on the same device during the same UTC day.
 The attendance challenge response includes the geofence for the room where the scanned class
 is held.
+The attendance history summary used by mobile clients lives in
+[mobile_attendance](mobile_attendance.md).
 
 ## Typical Flow
 
