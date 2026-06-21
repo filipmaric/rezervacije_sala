@@ -1,3 +1,18 @@
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+for site_packages in (
+    ROOT / "venv" / "lib" / "python3.10" / "site-packages",
+    ROOT / "venv" / "lib" / "python3.11" / "site-packages",
+):
+    if site_packages.exists() and str(site_packages) not in sys.path:
+        sys.path.insert(0, str(site_packages))
+        break
+
 import pytest
 import sqlite3
 import tempfile
@@ -67,11 +82,20 @@ class TestDB:
         with self.app.app_context():
             return myapp.execute_db(query, args)
 
-    def room(self, name="R1", capacity=50, type="lecture", location="A", priority=1):
+    def room(self, name="R1", capacity=50, type="lecture", building_name="A", location=None, priority=1):
+        if location is not None:
+            building_name = location
         return self.execute(
-            """INSERT INTO rooms (name, capacity, type, location, priority)
+            """INSERT INTO rooms (name, capacity, type, building_name, priority)
                VALUES (?, ?, ?, ?, ?)""",
-            (name, capacity, type, location, priority),
+            (name, capacity, type, building_name, priority),
+        )
+
+    def building_location(self, building_name, latitude, longitude, radius_m=100):
+        return self.execute(
+            """INSERT INTO building_locations (building_name, latitude, longitude, radius_m)
+               VALUES (?, ?, ?, ?)""",
+            (building_name, latitude, longitude, radius_m),
         )
 
     def teacher(self, name="Teacher", username="t1"):
@@ -95,8 +119,8 @@ class TestDB:
     def student(self, username, student_index, surname, given_name):
         return self.execute(
             """
-            INSERT INTO students (username, student_index, surname, given_name, created_at, updated_at)
-            VALUES (?, ?, ?, ?, datetime('now'), datetime('now'))
+            INSERT INTO students (username, student_index, surname, given_name)
+            VALUES (?, ?, ?, ?)
             """,
             (username, student_index, surname, given_name),
         )

@@ -8,17 +8,17 @@ def test_occupancy_reservation(client, db):
 
     db.reservation(
         room_id=room_id,
-        date="2026-06-18",
+        date="2026-06-22",
         start=2,
         end=4,
         description="meeting",
     )
 
-    r = client.get("/occupancy?date=2026-06-18")
+    r = client.get("/occupancy?date=2026-06-22")
 
     data = r.get_json()
 
-    assert data["date"] == "2026-06-18"
+    assert data["date"] == "2026-06-22"
     assert str(room_id) in data["rooms"]
 
     events = data["rooms"][str(room_id)]

@@ -15,6 +15,12 @@ def test_index_template(client):
     assert "Моје резервације" in r.get_data(as_text=True)
 
 
+def test_healthz_route(client):
+    r = client.get("/healthz")
+    assert r.status_code == 200
+    assert r.get_json() == {"ok": True}
+
+
 def test_calendar_template(client):
     r = client.get("/calendar")
     assert r.status_code == 200

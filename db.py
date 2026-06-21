@@ -52,26 +52,45 @@ def _ensure_attendance_schema(conn):
             username TEXT NOT NULL,
             registration_source TEXT NOT NULL DEFAULT 'web' CHECK(registration_source IN ('web', 'android')),
             client_ip TEXT,
+            client_latitude REAL,
+            client_longitude REAL,
+            geofence_checked INTEGER NOT NULL DEFAULT 0 CHECK(geofence_checked IN (0,1)),
             failed_attempts_before_success INTEGER NOT NULL DEFAULT 0,
-            spot_check_flagged INTEGER NOT NULL DEFAULT 0,
-            spot_check_teacher_username TEXT,
-            spot_check_flagged_at TEXT,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(event_kind, event_id, event_date, username)
         );
         CREATE INDEX IF NOT EXISTS idx_attendance_records_event
             ON attendance_records(event_kind, event_id, event_date);
+        CREATE INDEX IF NOT EXISTS idx_attendance_records_username_event
+            ON attendance_records(username, event_kind, event_id, event_date);
 
-        CREATE TABLE IF NOT EXISTS attendance_session_failures (
-            session_token TEXT PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS attendance_attempt_geofence_settings (
+            event_kind TEXT NOT NULL CHECK(event_kind IN ('weekly', 'reservation')),
+            event_id INTEGER NOT NULL,
+            event_date TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+            PRIMARY KEY(event_kind, event_id, event_date)
+        );
+
+        CREATE TABLE IF NOT EXISTS attendance_attempt_failures (
+            attempt_token TEXT PRIMARY KEY,
             failed_attempts INTEGER NOT NULL DEFAULT 0,
             blocked INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS attendance_spot_check_flags (
+            attendance_record_id INTEGER PRIMARY KEY,
+            teacher_username TEXT NOT NULL,
+            flagged_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(attendance_record_id) REFERENCES attendance_records(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_weekly_sessions_day_room_start
+            ON weekly_sessions(day_of_week, room_id, start_slot);
         """
     )
     columns = {
-        row["name"]
+        row[1]
         for row in conn.execute("PRAGMA table_info(attendance_records)").fetchall()
     }
     if "registration_source" not in columns:
@@ -80,18 +99,51 @@ def _ensure_attendance_schema(conn):
         )
     if "client_ip" not in columns:
         conn.execute("ALTER TABLE attendance_records ADD COLUMN client_ip TEXT")
+    if "client_latitude" not in columns:
+        conn.execute("ALTER TABLE attendance_records ADD COLUMN client_latitude REAL")
+    if "client_longitude" not in columns:
+        conn.execute("ALTER TABLE attendance_records ADD COLUMN client_longitude REAL")
+    if "geofence_checked" not in columns:
+        conn.execute(
+            "ALTER TABLE attendance_records ADD COLUMN geofence_checked INTEGER NOT NULL DEFAULT 0"
+        )
     if "failed_attempts_before_success" not in columns:
         conn.execute(
             "ALTER TABLE attendance_records ADD COLUMN failed_attempts_before_success INTEGER NOT NULL DEFAULT 0"
         )
-    if "spot_check_flagged" not in columns:
-        conn.execute(
-            "ALTER TABLE attendance_records ADD COLUMN spot_check_flagged INTEGER NOT NULL DEFAULT 0"
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS attendance_attempt_geofence_settings (
+            event_kind TEXT NOT NULL CHECK(event_kind IN ('weekly', 'reservation')),
+            event_id INTEGER NOT NULL,
+            event_date TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+            PRIMARY KEY(event_kind, event_id, event_date)
         )
-    if "spot_check_teacher_username" not in columns:
-        conn.execute("ALTER TABLE attendance_records ADD COLUMN spot_check_teacher_username TEXT")
-    if "spot_check_flagged_at" not in columns:
-        conn.execute("ALTER TABLE attendance_records ADD COLUMN spot_check_flagged_at TEXT")
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS attendance_spot_check_flags (
+            attendance_record_id INTEGER PRIMARY KEY,
+            teacher_username TEXT NOT NULL,
+            flagged_at TEXT NOT NULL DEFAULT (datetime('now')),
+            FOREIGN KEY(attendance_record_id) REFERENCES attendance_records(id) ON DELETE CASCADE
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_attendance_records_username_event
+            ON attendance_records(username, event_kind, event_id, event_date)
+        """
+    )
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_weekly_sessions_day_room_start
+            ON weekly_sessions(day_of_week, room_id, start_slot)
+        """
+    )
     conn.commit()
 
 
@@ -146,9 +198,7 @@ def _ensure_student_directory_schema(conn):
             username TEXT PRIMARY KEY,
             student_index TEXT NOT NULL,
             surname TEXT NOT NULL,
-            given_name TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            given_name TEXT NOT NULL
         );
         CREATE INDEX IF NOT EXISTS idx_students_student_index
             ON students(student_index);
@@ -157,16 +207,111 @@ def _ensure_student_directory_schema(conn):
     conn.commit()
 
 
+def _ensure_building_locations_schema(conn):
+    """Create the building locations table."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS building_locations (
+            building_name TEXT PRIMARY KEY,
+            latitude REAL NOT NULL,
+            longitude REAL NOT NULL,
+            radius_m REAL NOT NULL CHECK(radius_m > 0)
+        );
+        """
+    )
+    columns = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(building_locations)").fetchall()
+    }
+    if "building_name" not in columns and "name" in columns:
+        conn.execute("ALTER TABLE building_locations ADD COLUMN building_name TEXT")
+        conn.execute(
+            """
+            UPDATE building_locations
+            SET building_name = name
+            WHERE building_name IS NULL
+            """
+        )
+    conn.commit()
+
+
+def _ensure_room_building_name_schema(conn):
+    """Create the room building-name column if an older database still uses location."""
+    columns = {
+        row[1]
+        for row in conn.execute("PRAGMA table_info(rooms)").fetchall()
+    }
+    if "building_name" not in columns:
+        conn.execute("ALTER TABLE rooms ADD COLUMN building_name TEXT")
+        if "location" in columns:
+            conn.execute(
+                """
+                UPDATE rooms
+                SET building_name = location
+                WHERE building_name IS NULL
+                """
+            )
+    conn.commit()
+
+
 def _ensure_extra_schemas(conn):
     """Create the add-on tables used by attendance and Android auth."""
     _ensure_attendance_schema(conn)
     _ensure_mobile_auth_schema(conn)
     _ensure_student_directory_schema(conn)
+    _ensure_building_locations_schema(conn)
+    _ensure_room_building_name_schema(conn)
 
 
 def ensure_student_directory_schema(conn):
     """Public helper used by import scripts to ensure the student directory exists."""
     _ensure_student_directory_schema(conn)
+
+
+def building_locations_for_room_building_name(building_name):
+    """Return building geofences for one room location label."""
+    normalized = str(building_name or "").strip()
+    if not normalized:
+        return []
+    return [
+        dict(row)
+        for row in query_db(
+            """
+            SELECT building_name,
+                   building_name AS name,
+                   latitude,
+                   longitude,
+                   radius_m
+            FROM building_locations
+            WHERE building_name = ?
+            ORDER BY building_name
+            """,
+            (normalized,),
+        )
+    ]
+
+
+def building_locations_for_room_location(room_location):
+    """Backward-compatible wrapper for room building-name lookups."""
+    return building_locations_for_room_building_name(room_location)
+
+
+def building_locations_all():
+    """Return all configured building geofences."""
+    return [
+        dict(row)
+        for row in query_db(
+            """
+            SELECT building_name,
+                   building_name AS name,
+                   latitude,
+                   longitude,
+                   radius_m
+            FROM building_locations
+            ORDER BY building_name
+            """
+        )
+    ]
 
 
 def _utcnow():

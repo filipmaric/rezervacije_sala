@@ -16,9 +16,9 @@
       <section class="main-toolbar" aria-label="Основне контроле">
         <div class="main-toolbar-row main-toolbar-row-auth">
           <div id="auth-container" class="auth-panel">
-            <form id="login-form">
-                <input type="text" id="username" placeholder="Корисничко име" required>
-                <input type="password" id="password" placeholder="Лозинка" required>
+            <form id="login-form" autocomplete="off" autocapitalize="off" autocorrect="off">
+                <input type="text" id="username" name="username" placeholder="Корисничко име" required autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+                <input type="password" id="password" name="password" placeholder="Лозинка" required autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false">
                 <button type="submit">Пријава</button>
             </form>
 

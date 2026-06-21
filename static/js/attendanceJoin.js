@@ -10,6 +10,7 @@ let currentChallengeBucket = null;
 let freezeCountdownHandle = null;
 let freezeMessageText = '';
 let outsideClassShown = false;
+let geofenceErrorShown = false;
 
 const CHALLENGE_ROUND_MS = 10000;
 
@@ -29,8 +30,20 @@ function clearFreezeCountdown() {
     }
 }
 
+function scrollToSuccess(root) {
+    window.requestAnimationFrame(() => {
+        const panel = root.querySelector('.attendance-success-panel');
+        if (panel) {
+            panel.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        } else {
+            root.scrollIntoView({ block: 'start', behavior: 'smooth' });
+        }
+    });
+}
+
 function showOutsideClassState(root, messageText) {
     outsideClassShown = true;
+    geofenceErrorShown = false;
     successShown = false;
     blockedShown = false;
     expiredShown = false;
@@ -53,6 +66,61 @@ function showOutsideClassState(root, messageText) {
     const note = document.createElement('p');
     note.textContent = messageText || 'Поново покушајте током трајања часа.';
     panel.appendChild(note);
+
+    root.appendChild(panel);
+}
+
+function formatLocationValue(value, digits = 6) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num.toFixed(digits) : 'непознато';
+}
+
+function showGeofenceErrorState(root, errorData) {
+    geofenceErrorShown = true;
+    outsideClassShown = false;
+    successShown = false;
+    blockedShown = false;
+    expiredShown = false;
+    frozenUntilBucket = null;
+    freezeMessageText = '';
+    clearFreezeCountdown();
+    if (pollHandle) {
+        clearInterval(pollHandle);
+        pollHandle = null;
+    }
+    root.innerHTML = '';
+
+    const panel = document.createElement('div');
+    panel.className = 'attendance-panel attendance-blocked-panel';
+
+    const title = document.createElement('h2');
+    title.textContent = 'Пријава није могућа са ове локације';
+    panel.appendChild(title);
+
+    const note = document.createElement('p');
+    note.textContent = errorData?.error || 'Пријава је могућа само у близини дозвољене локације.';
+    panel.appendChild(note);
+
+    const current = errorData?.current_location;
+    if (current) {
+        const currentInfo = document.createElement('p');
+        currentInfo.textContent = `Тренутна локација: ${formatLocationValue(current.latitude)}, ${formatLocationValue(current.longitude)}`;
+        panel.appendChild(currentInfo);
+    }
+
+    const closest = errorData?.closest_location;
+    if (closest) {
+        const closestInfo = document.createElement('p');
+        const parts = [
+            `Најближа дозвољена локација: ${closest.name || 'непозната'}`,
+            `растојање ${formatLocationValue(closest.distance_m, 1)} m`,
+        ];
+        if (closest.radius_m !== undefined) {
+            parts.push(`полупречник ${formatLocationValue(closest.radius_m, 1)} m`);
+        }
+        closestInfo.textContent = parts.join(' | ');
+        panel.appendChild(closestInfo);
+    }
 
     root.appendChild(panel);
 }
@@ -89,16 +157,10 @@ function updateFreezeCountdown(root) {
         clearFreezeCountdown();
         refresh(root).catch((err) => {
             if (err.status === 403) {
-                const errorText = err.data?.error || err.message || '';
-                if (errorText.includes('само током часа')) {
-                    showOutsideClassState(root, errorText);
+                if (handleAttendanceError(root, err)) {
                     return;
                 }
-                if (errorText.includes('истекла')) {
-                    showSessionExpiredState(root);
-                } else {
-                    showBlockedState(root);
-                }
+                showBlockedState(root);
             } else {
                 const msg = root.querySelector('#attendance-message');
                 if (msg) msg.textContent = err.message;
@@ -164,6 +226,9 @@ function restoreFormState(root, state) {
 }
 
 function renderChallenge(root, data, state = {}) {
+    if (geofenceErrorShown) {
+        return;
+    }
     const existing = root.querySelector('.challenge-panel');
     if (existing) existing.remove();
 
@@ -268,18 +333,13 @@ function renderChallenge(root, data, state = {}) {
                 successPanel.appendChild(actions);
 
                 root.appendChild(successPanel);
+                scrollToSuccess(root);
             } catch (err) {
                 if (err.status === 403) {
-                    const errorText = err.data?.error || err.message || '';
-                    if (errorText.includes('само током часа')) {
-                        showOutsideClassState(root, errorText);
+                    if (handleAttendanceError(root, err)) {
                         return;
                     }
-                    if (errorText.includes('истекла')) {
-                        showSessionExpiredState(root);
-                    } else {
-                        showBlockedState(root);
-                    }
+                    showBlockedState(root);
                     return;
                 }
                 if (err.status === 409) {
@@ -365,7 +425,7 @@ function showBlockedState(root) {
     panel.appendChild(title);
 
     const note = document.createElement('p');
-    note.textContent = 'Ова сесија је закључана због превише нетачних покушаја.';
+    note.textContent = 'Овај покушај је закључан због превише нетачних покушаја.';
     panel.appendChild(note);
 
     root.appendChild(panel);
@@ -387,18 +447,43 @@ function showSessionExpiredState(root) {
     panel.className = 'attendance-panel attendance-blocked-panel';
 
     const title = document.createElement('h2');
-    title.textContent = 'Сесија је истекла';
+    title.textContent = 'Покушај је истекао';
     panel.appendChild(title);
 
     const note = document.createElement('p');
-    note.textContent = 'Поново скенирајте QR код да бисте добили нову сесију.';
+    note.textContent = 'Поново скенирајте QR код да бисте добили нови покушај.';
     panel.appendChild(note);
 
     root.appendChild(panel);
 }
 
+function handleAttendanceError(root, err) {
+    const errorCode = err.data?.error_code || '';
+    const errorText = err.data?.error || err.message || '';
+    if (errorCode === 'attendance_outside_class_time') {
+        showOutsideClassState(root, errorText);
+        return true;
+    }
+    if (errorCode === 'attendance_geofence_blocked' || errorCode === 'attendance_location_missing' || errorCode === 'attendance_location_required') {
+        showGeofenceErrorState(root, err.data || {});
+        return true;
+    }
+    if (errorCode === 'attendance_attempt_expired') {
+        showSessionExpiredState(root);
+        return true;
+    }
+    if (errorCode === 'attendance_attempt_blocked') {
+        showBlockedState(root);
+        return true;
+    }
+    return false;
+}
+
 async function refresh(root) {
     if (successShown || blockedShown || expiredShown) {
+        return;
+    }
+    if (geofenceErrorShown) {
         return;
     }
     if (frozenUntilBucket !== null) {
@@ -429,16 +514,10 @@ const App = {
                     await refresh(root);
                 } catch (err) {
                     if (err.status === 403) {
-                        const errorText = err.data?.error || err.message || '';
-                        if (errorText.includes('само током часа')) {
-                            showOutsideClassState(root, errorText);
+                        if (handleAttendanceError(root, err)) {
                             return;
                         }
-                        if (errorText.includes('истекла')) {
-                            showSessionExpiredState(root);
-                        } else {
-                            showBlockedState(root);
-                        }
+                        showBlockedState(root);
                         return;
                     }
                     const message = root.querySelector('#attendance-message');
@@ -447,16 +526,10 @@ const App = {
             }, 5000);
         } catch (err) {
             if (err.status === 403) {
-                const errorText = err.data?.error || err.message || '';
-                if (errorText.includes('само током часа')) {
-                    showOutsideClassState(root, errorText);
+                if (handleAttendanceError(root, err)) {
                     return;
                 }
-                if (errorText.includes('истекла')) {
-                    showSessionExpiredState(root);
-                } else {
-                    showBlockedState(root);
-                }
+                showBlockedState(root);
                 return;
             }
             root.innerHTML = '';

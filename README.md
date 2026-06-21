@@ -86,7 +86,6 @@ STUDENT_AUTH_BACKEND=radius
 SECRET_KEY=your_flask_session_secret
 SERVICE_API_KEY=your_service_api_key
 ATTENDANCE_SECRET=your_attendance_signing_secret
-ATTENDANCE_ALLOWED_LOCATIONS=[{"name":"MATF","latitude":44.8153,"longitude":20.4567,"radius_m":150}]
 TEACHER_RADIUS_SERVER=your.teacher.radius.server
 TEACHER_RADIUS_SECRET=your_teacher_radius_secret
 TEACHER_RADIUS_DICTIONARY=/path/to/teacher/dictionary
@@ -152,7 +151,7 @@ export STUDENT_RADIUS_DICTIONARY=/path/to/dictionary
 ```
 
 The challenge generator uses `ATTENDANCE_SECRET` if you want to override the default signing secret.
-`ATTENDANCE_ALLOWED_LOCATIONS` is a JSON list of fixed geofences where Android QR scanning is allowed. Each entry needs `name`, `latitude`, `longitude`, and `radius_m`.
+Building geofences are stored in the `building_locations` table and are matched to each room by `rooms.building_name`.
 Attendance records also store the best-effort client IP address and the registration source (`web` or `android`).
 
 If you have `aktivniStudenti.csv` and want to load it into the local student directory, run:

@@ -70,6 +70,7 @@ body {
     border: 1px solid #c9c9c9;
     background: #f4f4f4;
     color: #222;
+    font-size: 16px;
     height: 30px;
     padding: 0 10px;
     box-sizing: border-box;
@@ -217,6 +218,51 @@ body {
     background: #fafafa;
 }
 
+.attendance-geofence-panel {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.attendance-geofence-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    color: #222;
+}
+
+.attendance-geofence-status {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+}
+
+.attendance-geofence-status-on {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #166534;
+}
+
+.attendance-geofence-status-off {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    color: #374151;
+}
+
+.attendance-geofence-warning {
+    margin: 0;
+    font-weight: 600;
+    color: #9a4a00;
+}
+
 .attendance-success-panel {
     text-align: center;
     background: #eef9ef;
@@ -292,10 +338,21 @@ body {
 }
 
 .teacher-page-shell #attendance-root {
+    display: block;
+}
+
+.attendance-teacher-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+    gap: 12px;
+    align-items: start;
+}
+
+.attendance-teacher-column {
     display: flex;
     flex-direction: column;
-    align-items: stretch;
     gap: 8px;
+    min-height: 0;
 }
 
 .teacher-page-shell .attendance-panel,
@@ -304,6 +361,23 @@ body {
 .teacher-page-shell .attendance-qr-box {
     margin: 8px 0;
     padding: 12px 14px;
+}
+
+.attendance-teacher-column .attendance-panel,
+.attendance-teacher-column .attendance-roster,
+.attendance-teacher-column .challenge-panel,
+.attendance-teacher-column .attendance-qr-box {
+    margin: 0;
+}
+
+.attendance-teacher-column-right {
+    min-height: 0;
+}
+
+.attendance-teacher-column-right .attendance-roster {
+    max-height: calc(100vh - 260px);
+    overflow-y: auto;
+    min-height: 0;
 }
 
 .teacher-page-shell .attendance-qr-box {
@@ -334,6 +408,17 @@ body {
 
 .attendance-page-header p {
     margin: 0;
+}
+
+@media (max-width: 860px) {
+    .attendance-teacher-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .attendance-teacher-column-right .attendance-roster {
+        max-height: none;
+        overflow-y: visible;
+    }
 }
 
 .my-reservations-page-header {
@@ -666,6 +751,7 @@ body {
     box-sizing: border-box;
     margin: 0 0 8px;
     padding: 12px 14px;
+    font-size: 16px;
 }
 
 .student-attendance-shell .challenge-panel input + input {
@@ -689,6 +775,13 @@ body {
         margin: 12px;
     }
 
+    .student-attendance-shell .attendance-panel,
+    .student-attendance-shell .challenge-panel,
+    .student-attendance-shell .attendance-roster {
+        margin: 8px 0;
+        padding: 12px 12px;
+    }
+
     .student-attendance-shell {
         width: 100%;
     }
@@ -704,27 +797,36 @@ body {
 
     .student-attendance-shell .challenge-panel input {
         padding: 11px 13px;
+        font-size: 16px;
     }
 
     .attendance-success-panel {
-        padding: 18px 14px;
+        padding: 12px 10px;
     }
 
     .attendance-success-panel h2 {
-        font-size: 1.2rem;
+        font-size: 1.08rem;
+        margin-bottom: 6px;
     }
 
     .attendance-success-panel p {
-        font-size: 0.98rem;
+        font-size: 0.92rem;
+        line-height: 1.35;
+    }
+
+    .attendance-success-root {
+        min-height: auto;
+        justify-content: flex-start;
+    }
+
+    .attendance-success-actions {
+        margin-top: 10px;
     }
 
     .attendance-success-home-link {
         width: 100%;
         box-sizing: border-box;
-    }
-
-    .attendance-success-root {
-        min-height: calc(100vh - 110px);
+        min-height: 30px;
     }
 }
 

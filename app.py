@@ -3,8 +3,9 @@ Flask app entry point and route registration.
 
 Route overview:
 - Authentication: /login, /logout, /whoami, /is_admin/<username>
-- Android auth: /auth/login, /auth/logout, /auth/me, /auth/sessions, /healthz
-- Frontend: /
+- Mobile API: /mobile/login, /mobile/logout, /mobile/me, /mobile/sessions, /mobile/healthz,
+  /mobile/attendance/history
+- Frontend: /, /healthz
 - Rooms and occupancy: /rooms, /occupancy
 - Reservation writes: /reserve, /reserve/bulk, /reservation/<id>, /weekly_session_cancel
 - Semester and personal reservations: /my_reservations, /my_reservations_data
@@ -15,6 +16,7 @@ Route overview:
 """
 
 import argparse
+
 from config import (
     DATABASE,
 )
@@ -25,7 +27,8 @@ app = create_app()
 import main as main_mod  # noqa: E402,F401 - registers the main page route on import
 import auth  # noqa: E402,F401 - registers auth routes and helpers on import
 from auth import *  # noqa: F401,F403,E402 - re-export auth helpers and routes
-import mobile_auth as mobile_auth_mod  # noqa: E402,F401 - registers Android auth routes on import
+import mobile_auth as mobile_auth_mod  # noqa: E402,F401 - registers mobile API routes on import
+import mobile_attendance as mobile_attendance_mod  # noqa: E402,F401 - registers mobile attendance routes on import
 
 auth.init_app(app)
 
@@ -45,13 +48,13 @@ from reservations_views import *  # noqa: F401,F403,E402 - re-export semester/pe
 
 app.register_blueprint(auth.bp)
 app.register_blueprint(mobile_auth_mod.bp)
+app.register_blueprint(mobile_attendance_mod.bp)
 app.register_blueprint(main_mod.bp)
 app.register_blueprint(occupancy_mod.bp)
 app.register_blueprint(attendance_mod.bp)
 app.register_blueprint(calendar_views_mod.bp)
 app.register_blueprint(reservations_mod.bp)
 app.register_blueprint(reservations_views_mod.bp)
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Classroom reservation app")
     parser.add_argument(

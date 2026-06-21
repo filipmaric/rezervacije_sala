@@ -12,6 +12,23 @@ const AuthManager = {
 
     init(elements) {
         this.elements = elements;
+        if (this.elements.loginForm) {
+            this.elements.loginForm.setAttribute("autocomplete", "off");
+            this.elements.loginForm.setAttribute("autocapitalize", "off");
+            this.elements.loginForm.setAttribute("autocorrect", "off");
+        }
+        if (this.elements.usernameInput) {
+            this.elements.usernameInput.setAttribute("autocomplete", "off");
+            this.elements.usernameInput.setAttribute("autocapitalize", "off");
+            this.elements.usernameInput.setAttribute("autocorrect", "off");
+            this.elements.usernameInput.setAttribute("spellcheck", "false");
+        }
+        if (this.elements.passwordInput) {
+            this.elements.passwordInput.setAttribute("autocomplete", "new-password");
+            this.elements.passwordInput.setAttribute("autocapitalize", "off");
+            this.elements.passwordInput.setAttribute("autocorrect", "off");
+            this.elements.passwordInput.setAttribute("spellcheck", "false");
+        }
     },
 
     async updateUI() {
@@ -338,6 +355,8 @@ const App = {
         // inicijalizacija AuthManagera sa UI elementima
         AuthManager.init({
             loginForm: document.getElementById("login-form"),
+            usernameInput: document.getElementById("username"),
+            passwordInput: document.getElementById("password"),
             loginInfo: document.getElementById("login-info"),
             logoutForm: document.getElementById("logout-form"),
             myReservationsWrap: document.getElementById("my-reservations-wrap")

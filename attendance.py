@@ -12,15 +12,16 @@ from flask_login import current_user
 from config import (
     ATTENDANCE_CHALLENGE_TTL,
     ATTENDANCE_CLASS_GRACE_MINUTES,
-    ATTENDANCE_ALLOWED_LOCATIONS,
     ATTENDANCE_JOIN_TOKEN_TTL,
     ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS,
     ATTENDANCE_SECRET,
-    ATTENDANCE_SESSION_TTL,
+    ATTENDANCE_ATTEMPT_TTL,
 )
 from auth import RATE_LIMITS, check_if_admin, enforce_rate_limit, student_radius_auth
 from db import (
     execute_db,
+    building_locations_for_room_building_name,
+    building_locations_all,
     mobile_auth_get_session_by_token,
     mobile_auth_get_user_by_id,
     query_db,
@@ -120,6 +121,7 @@ def attendance_event_row(kind, event_id, event_date):
             SELECT ws.id AS event_id,
                    ws.room_id,
                    r.name AS room_name,
+                   r.building_name AS room_building_name,
                    ws.start_slot,
                    ws.end_slot,
                    ws.day_of_week,
@@ -148,6 +150,7 @@ def attendance_event_row(kind, event_id, event_date):
             GROUP BY ws.id,
                      ws.room_id,
                      r.name,
+                     r.building_name,
                      ws.start_slot,
                      ws.end_slot,
                      ws.day_of_week,
@@ -174,6 +177,7 @@ def attendance_event_row(kind, event_id, event_date):
             SELECT r.id AS event_id,
                    r.room_id,
                    rm.name AS room_name,
+                   rm.building_name AS room_building_name,
                    r.start_slot,
                    r.end_slot,
                    r.date AS reservation_date,
@@ -243,6 +247,11 @@ def attendance_not_open_message():
     return "Пријава присуства је могућа само током часа."
 
 
+def attendance_attempt_blocked_message():
+    """Return the message shown when too many wrong attempts block the attempt."""
+    return "Превише погрешних покушаја. Морате поново да скенирате QR код."
+
+
 # Attendance record helpers.
 #
 # `attendance_records` stores the students that successfully checked in for a
@@ -258,6 +267,9 @@ def attendance_records_for_event(kind, event_id, event_date):
                ar.created_at,
                ar.registration_source,
                ar.client_ip,
+               ar.client_latitude,
+               ar.client_longitude,
+               ar.geofence_checked,
                ar.failed_attempts_before_success,
                s.student_index,
                s.surname,
@@ -292,6 +304,9 @@ def attendance_records_for_event(kind, event_id, event_date):
                 "created_at": row["created_at"],
                 "registration_source": row["registration_source"],
                 "client_ip": row["client_ip"],
+                "client_latitude": row["client_latitude"],
+                "client_longitude": row["client_longitude"],
+                "geofence_checked": bool(row["geofence_checked"]),
                 "failed_attempts_before_success": int(row["failed_attempts_before_success"] or 0),
                 "student_index": student_index or None,
                 "student_name": full_name or None,
@@ -308,16 +323,41 @@ def attendance_record_student(
     username,
     registration_source="web",
     client_ip=None,
+    client_latitude=None,
+    client_longitude=None,
+    geofence_checked=False,
     failed_attempts_before_success=0,
 ):
     """Store one successful attendance check-in for a student."""
     execute_db(
         """
         INSERT OR IGNORE INTO attendance_records
-            (event_kind, event_id, event_date, username, registration_source, client_ip, failed_attempts_before_success)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+            (
+                event_kind,
+                event_id,
+                event_date,
+                username,
+                registration_source,
+                client_ip,
+                client_latitude,
+                client_longitude,
+                geofence_checked,
+                failed_attempts_before_success
+            )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (kind, event_id, event_date, username, registration_source, client_ip, int(failed_attempts_before_success or 0)),
+        (
+            kind,
+            event_id,
+            event_date,
+            username,
+            registration_source,
+            client_ip,
+            client_latitude,
+            client_longitude,
+            int(bool(geofence_checked)),
+            int(failed_attempts_before_success or 0),
+        ),
     )
 
 
@@ -376,7 +416,7 @@ def attendance_spot_check_record_misses(kind, event_id, event_date, selected_use
     for username in sorted(missed):
         row = query_db(
             """
-            SELECT username
+            SELECT id
             FROM attendance_records
             WHERE event_kind = ?
               AND event_id = ?
@@ -390,117 +430,144 @@ def attendance_spot_check_record_misses(kind, event_id, event_date, selected_use
             continue
         execute_db(
             """
-            UPDATE attendance_records
-            SET spot_check_flagged = 1,
-                spot_check_teacher_username = ?,
-                spot_check_flagged_at = datetime('now')
-            WHERE event_kind = ?
-              AND event_id = ?
-              AND event_date = ?
-              AND username = ?
+            INSERT INTO attendance_spot_check_flags
+                (attendance_record_id, teacher_username, flagged_at)
+            VALUES (?, ?, datetime('now'))
+            ON CONFLICT(attendance_record_id) DO UPDATE SET
+                teacher_username = excluded.teacher_username,
+                flagged_at = excluded.flagged_at
             """,
-            (teacher_username, kind, event_id, event_date, username),
+            (row["id"], teacher_username),
         )
         updated += 1
 
     return updated
 
 
-# Attendance failure tracking and expiry cleanup.
+# Attendance attempt failure tracking and expiry cleanup.
 #
-# These helpers remember failed attempts for a student attendance session.
-# After two wrong attempts, the session is blocked. Expired failure rows are
+# These helpers remember failed attempts for a student attendance attempt.
+# After two wrong attempts, the attempt is blocked. Expired failure rows are
 # cleaned when attendance endpoints are hit.
 
 
-def attendance_session_failure_state(session_token):
-    """Return or create the failure-tracking row for one attendance session."""
-    if not session_token:
+def attendance_attempt_failure_state(attempt_token):
+    """Return or create the failure-tracking row for one attendance attempt."""
+    if not attempt_token:
         return None
 
     execute_db(
         """
-        INSERT OR IGNORE INTO attendance_session_failures
-            (session_token, failed_attempts, blocked)
+        INSERT OR IGNORE INTO attendance_attempt_failures
+            (attempt_token, failed_attempts, blocked)
         VALUES (?, 0, 0)
         """,
-        (session_token,),
+        (attempt_token,),
     )
     row = query_db(
         """
-        SELECT session_token, failed_attempts, blocked, updated_at
-        FROM attendance_session_failures
-        WHERE session_token = ?
+        SELECT attempt_token, failed_attempts, blocked, updated_at
+        FROM attendance_attempt_failures
+        WHERE attempt_token = ?
         """,
-        (session_token,),
+        (attempt_token,),
         one=True,
     )
     return dict(row) if row else None
 
 
-def attendance_session_failure_state_raw(session_token):
+def attendance_attempt_failure_state_raw(attempt_token):
     """Return the failure-tracking row without creating a new one."""
-    if not session_token:
+    if not attempt_token:
         return None
     row = query_db(
         """
-        SELECT session_token, failed_attempts, blocked, updated_at
-        FROM attendance_session_failures
-        WHERE session_token = ?
+        SELECT attempt_token, failed_attempts, blocked, updated_at
+        FROM attendance_attempt_failures
+        WHERE attempt_token = ?
         """,
-        (session_token,),
+        (attempt_token,),
         one=True,
     )
     return dict(row) if row else None
 
 
-def attendance_session_record_failure(session_token):
-    """Count one wrong challenge attempt for the current attendance session."""
-    if not session_token:
+def attendance_attempt_record_failure(attempt_token):
+    """Count one wrong challenge attempt for the current attendance attempt."""
+    if not attempt_token:
         return None
 
     execute_db(
         """
-        INSERT OR IGNORE INTO attendance_session_failures
-            (session_token, failed_attempts, blocked)
+        INSERT OR IGNORE INTO attendance_attempt_failures
+            (attempt_token, failed_attempts, blocked)
         VALUES (?, 0, 0)
         """,
-        (session_token,),
+        (attempt_token,),
     )
     execute_db(
         """
-        UPDATE attendance_session_failures
+        UPDATE attendance_attempt_failures
         SET failed_attempts = failed_attempts + 1,
             blocked = CASE
                 WHEN failed_attempts + 1 >= 2 THEN 1
                 ELSE blocked
             END,
             updated_at = datetime('now')
-        WHERE session_token = ?
+        WHERE attempt_token = ?
         """,
-        (session_token,),
+        (attempt_token,),
     )
-    return attendance_session_failure_state(session_token)
+    return attendance_attempt_failure_state(attempt_token)
 
 
-def attendance_session_clear_failures(session_token):
+def attendance_attempt_block(attempt_token):
+    """Force the attendance attempt into the blocked state."""
+    if not attempt_token:
+        return None
+
+    execute_db(
+        """
+        INSERT OR IGNORE INTO attendance_attempt_failures
+            (attempt_token, failed_attempts, blocked)
+        VALUES (?, 0, 0)
+        """,
+        (attempt_token,),
+    )
+    execute_db(
+        """
+        UPDATE attendance_attempt_failures
+        SET failed_attempts = CASE
+                WHEN failed_attempts < 2 THEN 2
+                ELSE failed_attempts
+            END,
+            blocked = 1,
+            updated_at = datetime('now')
+        WHERE attempt_token = ?
+        """,
+        (attempt_token,),
+    )
+    return attendance_attempt_failure_state(attempt_token)
+
+
+def attendance_attempt_clear_failures(attempt_token):
     """Remove failure tracking when the student checks in successfully."""
-    if not session_token:
+    if not attempt_token:
         return
     execute_db(
         """
-        DELETE FROM attendance_session_failures
-        WHERE session_token = ?
+        DELETE FROM attendance_attempt_failures
+        WHERE attempt_token = ?
         """,
-        (session_token,),
+        (attempt_token,),
     )
 
 
-def attendance_session_token_expires_at(session_token):
-    """Extract the expiry timestamp from a signed attendance session token."""
-    if not session_token or "." not in session_token:
+def attendance_attempt_token_expires_at(attempt_token):
+    """Extract the expiry timestamp from a signed attendance attempt token."""
+    if not attempt_token or "." not in attempt_token:
         return None
-    payload, _signature = session_token.rsplit(".", 1)
+    payload, _signature = attempt_token.rsplit(".", 1)
     parts = payload.split(":")
     if len(parts) != 5:
         return None
@@ -510,20 +577,20 @@ def attendance_session_token_expires_at(session_token):
         return None
 
 
-def attendance_cleanup_expired_failures(now=None):
-    """Delete stale failure rows for expired attendance sessions."""
+def attendance_cleanup_expired_attempt_failures(now=None):
+    """Delete stale failure rows for expired attendance attempts."""
     now = now or datetime.datetime.now()
     now_ts = int(now.timestamp())
     rows = query_db(
         """
-        SELECT session_token
-        FROM attendance_session_failures
+        SELECT attempt_token
+        FROM attendance_attempt_failures
         """,
     ) or []
     expired_tokens = []
     for row in rows:
-        token = row["session_token"]
-        expires_at = attendance_session_token_expires_at(token)
+        token = row["attempt_token"]
+        expires_at = attendance_attempt_token_expires_at(token)
         if expires_at is not None and expires_at < now_ts:
             expired_tokens.append(token)
     if not expired_tokens:
@@ -531,47 +598,47 @@ def attendance_cleanup_expired_failures(now=None):
     for token in expired_tokens:
         execute_db(
             """
-            DELETE FROM attendance_session_failures
-            WHERE session_token = ?
+            DELETE FROM attendance_attempt_failures
+            WHERE attempt_token = ?
             """,
             (token,),
         )
     return len(expired_tokens)
 
 
-def attendance_session_is_blocked(session_token):
-    """Check the failure row for a session, creating it if needed."""
-    state = attendance_session_failure_state(session_token)
+def attendance_attempt_is_blocked(attempt_token):
+    """Check the failure row for an attendance attempt, creating it if needed."""
+    state = attendance_attempt_failure_state(attempt_token)
     return bool(state and state["blocked"])
 
 
-def attendance_session_is_blocked_raw(session_token):
-    """Check whether the session is blocked without creating a failure row."""
-    state = attendance_session_failure_state_raw(session_token)
+def attendance_attempt_is_blocked_raw(attempt_token):
+    """Check whether the attempt is blocked without creating a failure row."""
+    state = attendance_attempt_failure_state_raw(attempt_token)
     return bool(state and state["blocked"])
 
 
-# Student attendance session helpers.
+# Student attendance attempt helpers.
 #
 # A student first scans the QR code, which creates a signed cookie-backed
-# attendance session. The join page and submit endpoint both check that the
-# session is present and still valid.
+# attendance attempt. The join page and submit endpoint both check that the
+# attempt is present and still valid.
 
 
-def attendance_session_status(kind, event_id, event_date):
-    """Classify the current attendance session as valid, missing, blocked, or expired."""
-    attendance_cleanup_expired_failures()
-    session_token = attendance_session_from_request(kind, event_id, event_date)
-    if not session_token:
+def attendance_attempt_status(kind, event_id, event_date):
+    """Classify the current attendance attempt as valid, missing, blocked, or expired."""
+    attendance_cleanup_expired_attempt_failures()
+    attempt_token = attendance_attempt_from_request(kind, event_id, event_date)
+    if not attempt_token:
         return "missing"
-    return attendance_session_status_for_token(kind, event_id, event_date, session_token)
+    return attendance_attempt_status_for_token(kind, event_id, event_date, attempt_token)
 
 
-def attendance_session_status_for_token(kind, event_id, event_date, session_token):
-    """Classify a supplied attendance session token as valid, blocked, or expired."""
-    if attendance_session_is_blocked_raw(session_token):
+def attendance_attempt_status_for_token(kind, event_id, event_date, attempt_token):
+    """Classify a supplied attendance attempt token as valid, blocked, or expired."""
+    if attendance_attempt_is_blocked_raw(attempt_token):
         return "blocked"
-    if not attendance_validate_session_token(kind, event_id, event_date, session_token):
+    if not attendance_validate_attempt_token(kind, event_id, event_date, attempt_token):
         return "expired"
     return "valid"
 
@@ -628,12 +695,17 @@ def attendance_distance_meters(latitude1, longitude1, latitude2, longitude2):
 
 def attendance_location_is_allowed(latitude, longitude):
     """Check whether the supplied coordinates are inside one of the allowed geofences."""
-    if not ATTENDANCE_ALLOWED_LOCATIONS:
-        return True, None
+    return attendance_location_is_allowed_in_set(latitude, longitude, building_locations_all())
+
+
+def attendance_location_is_allowed_in_set(latitude, longitude, allowed_locations):
+    """Check whether the supplied coordinates are inside one of the provided geofences."""
+    if not allowed_locations:
+        return False, None
 
     closest = None
     closest_distance = None
-    for location in ATTENDANCE_ALLOWED_LOCATIONS:
+    for location in allowed_locations:
         distance = attendance_distance_meters(
             latitude,
             longitude,
@@ -649,9 +721,86 @@ def attendance_location_is_allowed(latitude, longitude):
     return False, closest
 
 
+def attendance_allowed_locations_for_room_building_name(building_name):
+    """Return the configured geofences for one room location."""
+    return building_locations_for_room_building_name(building_name)
+
+
+def attendance_allowed_locations_for_room_location(room_location):
+    """Backward-compatible wrapper for room building-name lookups."""
+    return attendance_allowed_locations_for_room_building_name(room_location)
+
+
+def attendance_allowed_locations_for_row(row):
+    """Return the configured geofences for the room used by one attendance event."""
+    return attendance_allowed_locations_for_room_building_name(row.get("room_building_name"))
+
+
+def attendance_geofence_state_for_event(kind, event_id, event_date, row=None):
+    """Return the persisted geofence toggle state for one attendance attempt."""
+    row = row or attendance_event_row(kind, event_id, event_date)
+    allowed_locations = attendance_allowed_locations_for_row(row) if row else []
+    available = bool(allowed_locations)
+
+    setting = query_db(
+        """
+        SELECT enabled
+        FROM attendance_attempt_geofence_settings
+        WHERE event_kind = ?
+          AND event_id = ?
+          AND event_date = ?
+        """,
+        (kind, event_id, event_date),
+        one=True,
+    )
+    enabled = bool(setting["enabled"]) if setting is not None else available
+    if not available:
+        enabled = False
+
+    return {
+        "available": available,
+        "enabled": enabled,
+        "warning": None if available else "Локација за ову учионицу није подешена.",
+        "locations": allowed_locations,
+    }
+
+
+def attendance_geofence_set_for_event(kind, event_id, event_date, enabled):
+    """Persist the geofence toggle for one attendance attempt."""
+    execute_db(
+        """
+        INSERT INTO attendance_attempt_geofence_settings
+            (event_kind, event_id, event_date, enabled)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(event_kind, event_id, event_date) DO UPDATE SET
+            enabled = excluded.enabled
+        """,
+        (
+            kind,
+            event_id,
+            event_date,
+            int(bool(enabled)),
+        ),
+    )
+    return attendance_geofence_state_for_event(kind, event_id, event_date)
+
+
+def attendance_optional_coordinates_from_payload(payload):
+    """Parse optional numeric coordinates from a request payload."""
+    latitude = payload.get("latitude")
+    longitude = payload.get("longitude")
+    if latitude is None or longitude is None:
+        return None, None
+    try:
+        return float(latitude), float(longitude)
+    except (TypeError, ValueError):
+        return None, None
+
+
 def attendance_geofence_rejection_payload(latitude, longitude, closest):
     """Build a diagnostic payload for a rejected mobile geofence check."""
     payload = {
+        "error_code": "attendance_geofence_blocked",
         "error": "Пријава је могућа само у близини дозвољене локације.",
         "current_location": {
             "latitude": float(latitude),
@@ -675,11 +824,11 @@ def attendance_geofence_rejection_payload(latitude, longitude, closest):
     return payload
 
 
-# QR token and attendance-session helpers.
+# QR token and attendance-attempt helpers.
 #
 # The QR token is short-lived and rotates every 8 seconds. Once a student
 # opens the tokenized QR link, the server sets a longer-lived attendance
-# session cookie (90 seconds by default) so the student has time to enter
+# attempt cookie (90 seconds by default) so the student has time to enter
 # credentials and choose the correct challenge number.
 
 
@@ -715,39 +864,39 @@ def attendance_token_is_valid(kind, event_id, event_date, token, now=None):
     return False
 
 
-def attendance_session_cookie_name(kind, event_id, event_date):
-    """Build the cookie name for one attendance session."""
-    return f"attendance_session_{kind}_{event_id}_{event_date}"
+def attendance_attempt_cookie_name(kind, event_id, event_date):
+    """Build the cookie name for one attendance attempt."""
+    return f"attendance_attempt_{kind}_{event_id}_{event_date}"
 
 
-def attendance_session_payload(kind, event_id, event_date, expires_at, nonce):
-    """Serialize the signed attendance-session payload."""
+def attendance_attempt_payload(kind, event_id, event_date, expires_at, nonce):
+    """Serialize the signed attendance-attempt payload."""
     return f"{kind}:{event_id}:{event_date}:{expires_at}:{nonce}"
 
 
-def attendance_session_sign(payload):
-    """Sign an attendance-session payload with the shared secret."""
+def attendance_attempt_sign(payload):
+    """Sign an attendance-attempt payload with the shared secret."""
     digest = hmac.new(ATTENDANCE_SECRET.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
     return digest
 
 
-def attendance_create_session_token(kind, event_id, event_date, now=None):
+def attendance_create_attempt_token(kind, event_id, event_date, now=None):
     """Create the signed cookie value that keeps a student on the join page."""
     now = now or datetime.datetime.now()
-    expires_at = int(now.timestamp()) + ATTENDANCE_SESSION_TTL
+    expires_at = int(now.timestamp()) + ATTENDANCE_ATTEMPT_TTL
     nonce = secrets.token_urlsafe(12)
-    payload = attendance_session_payload(kind, event_id, event_date, expires_at, nonce)
-    signature = attendance_session_sign(payload)
+    payload = attendance_attempt_payload(kind, event_id, event_date, expires_at, nonce)
+    signature = attendance_attempt_sign(payload)
     return f"{payload}.{signature}"
 
 
-def attendance_validate_session_token(kind, event_id, event_date, token, now=None):
-    """Verify the signed attendance-session cookie and its expiry time."""
+def attendance_validate_attempt_token(kind, event_id, event_date, token, now=None):
+    """Verify the signed attendance-attempt cookie and its expiry time."""
     if not token or "." not in token:
         return False
     now = now or datetime.datetime.now()
     payload, signature = token.rsplit(".", 1)
-    if not hmac.compare_digest(attendance_session_sign(payload), signature):
+    if not hmac.compare_digest(attendance_attempt_sign(payload), signature):
         return False
     parts = payload.split(":")
     if len(parts) != 5:
@@ -762,26 +911,26 @@ def attendance_validate_session_token(kind, event_id, event_date, token, now=Non
     return int(now.timestamp()) <= expires_at
 
 
-def attendance_session_from_request(kind, event_id, event_date):
-    """Read the attendance-session cookie from the current request."""
-    cookie_name = attendance_session_cookie_name(kind, event_id, event_date)
+def attendance_attempt_from_request(kind, event_id, event_date):
+    """Read the attendance-attempt cookie from the current request."""
+    cookie_name = attendance_attempt_cookie_name(kind, event_id, event_date)
     return request.cookies.get(cookie_name)
 
 
-def attendance_has_session(kind, event_id, event_date):
-    """Return True when the request carries a valid attendance-session cookie."""
-    token = attendance_session_from_request(kind, event_id, event_date)
-    return attendance_validate_session_token(kind, event_id, event_date, token)
+def attendance_has_attempt(kind, event_id, event_date):
+    """Return True when the request carries a valid attendance-attempt cookie."""
+    token = attendance_attempt_from_request(kind, event_id, event_date)
+    return attendance_validate_attempt_token(kind, event_id, event_date, token)
 
 
-def attendance_make_session_response(response, kind, event_id, event_date):
-    """Attach a fresh attendance-session cookie to a redirect response."""
-    token = attendance_create_session_token(kind, event_id, event_date)
-    cookie_name = attendance_session_cookie_name(kind, event_id, event_date)
+def attendance_make_attempt_response(response, kind, event_id, event_date):
+    """Attach a fresh attendance-attempt cookie to a redirect response."""
+    token = attendance_create_attempt_token(kind, event_id, event_date)
+    cookie_name = attendance_attempt_cookie_name(kind, event_id, event_date)
     response.set_cookie(
         cookie_name,
         token,
-        max_age=ATTENDANCE_SESSION_TTL,
+        max_age=ATTENDANCE_ATTEMPT_TTL,
         httponly=True,
         samesite="Lax",
     )
@@ -798,7 +947,7 @@ def attendance_make_session_response(response, kind, event_id, event_date):
 @bp.route('/attendance/<kind>/<int:event_id>/<event_date>')
 def attendance_view(kind, event_id, event_date):
     """Render the teacher attendance page."""
-    attendance_cleanup_expired_failures()
+    attendance_cleanup_expired_attempt_failures()
     if not attendance_kind_valid(kind):
         abort(404)
     return render_template(
@@ -812,11 +961,11 @@ def attendance_view(kind, event_id, event_date):
 
 @bp.route('/attendance/<kind>/<int:event_id>/<event_date>/join')
 def attendance_join_view(kind, event_id, event_date):
-    """Render the student attendance page after a QR scan creates a session."""
-    attendance_cleanup_expired_failures()
+    """Render the student attendance page after a QR scan creates an attempt."""
+    attendance_cleanup_expired_attempt_failures()
     if not attendance_kind_valid(kind):
         abort(404)
-    if not attendance_has_session(kind, event_id, event_date):
+    if not attendance_has_attempt(kind, event_id, event_date):
         abort(403)
     return render_template(
         'attendance_join.html',
@@ -829,15 +978,15 @@ def attendance_join_view(kind, event_id, event_date):
 
 @bp.route('/attendance/<kind>/<int:event_id>/<event_date>/join/<token>')
 def attendance_join_view_token(kind, event_id, event_date, token):
-    """Validate a short-lived QR token and create the student attendance session."""
-    attendance_cleanup_expired_failures()
+    """Validate a short-lived QR token and create the student attendance attempt."""
+    attendance_cleanup_expired_attempt_failures()
     if not attendance_kind_valid(kind):
         abort(404)
     row = attendance_event_row(kind, event_id, event_date)
     if not row:
         return jsonify({"error": "event not found"}), 404
     if not attendance_is_open_now(row):
-        return jsonify({"error": attendance_not_open_message()}), 403
+        return jsonify({"error_code": "attendance_outside_class_time", "error": attendance_not_open_message()}), 403
     if not attendance_token_is_valid(kind, event_id, event_date, token):
         abort(404)
     response = make_response(
@@ -848,14 +997,14 @@ def attendance_join_view_token(kind, event_id, event_date, token):
             event_date=event_date,
         ))
     )
-    return attendance_make_session_response(response, kind, event_id, event_date)
+    return attendance_make_attempt_response(response, kind, event_id, event_date)
 
 
 
 @bp.route('/attendance/<kind>/<int:event_id>/<event_date>/challenge')
 def attendance_challenge_data(kind, event_id, event_date):
     """Return the current challenge code and event metadata."""
-    attendance_cleanup_expired_failures()
+    attendance_cleanup_expired_attempt_failures()
     if not attendance_kind_valid(kind):
         abort(404)
 
@@ -865,31 +1014,51 @@ def attendance_challenge_data(kind, event_id, event_date):
     if kind == 'weekly' and bool(row.get('is_canceled')):
         return jsonify({'error': 'this lecture occurrence is canceled'}), 409
     if not attendance_is_open_now(row):
-        return jsonify({'error': attendance_not_open_message()}), 403
+        return jsonify({'error_code': 'attendance_outside_class_time', 'error': attendance_not_open_message()}), 403
     mobile_session = attendance_mobile_session_from_request()
+    attendance_attempt_token = attendance_attempt_from_request(kind, event_id, event_date) or ""
     if mobile_session:
+        attendance_attempt_token = request.args.get("attendance_attempt_token", "").strip()
         join_token = request.args.get("join_token", "").strip()
-        if not attendance_token_is_valid(kind, event_id, event_date, join_token):
-            return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
+        if attendance_attempt_token:
+            if attendance_attempt_is_blocked_raw(attendance_attempt_token):
+                return jsonify({'error_code': 'attendance_attempt_blocked', 'error': attendance_attempt_blocked_message()}), 403
+            if not attendance_validate_attempt_token(kind, event_id, event_date, attendance_attempt_token):
+                return jsonify({'error_code': 'attendance_attempt_expired', 'error': 'Покушај је истекао. Поново скенирајте QR код.'}), 403
+        else:
+            if attendance_attempt_is_blocked_raw(join_token):
+                return jsonify({'error_code': 'attendance_attempt_blocked', 'error': attendance_attempt_blocked_message()}), 403
+            if not attendance_token_is_valid(kind, event_id, event_date, join_token):
+                return jsonify({'error_code': 'attendance_attempt_expired', 'error': 'Покушај је истекао. Поново скенирајте QR код.'}), 403
+            attendance_attempt_token = attendance_create_attempt_token(kind, event_id, event_date)
     else:
-        session_status = attendance_session_status(kind, event_id, event_date)
-        if session_status == "blocked":
-            return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
-        if session_status != "valid":
-            return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
+        attempt_status = attendance_attempt_status(kind, event_id, event_date)
+        if attempt_status == "blocked":
+            return jsonify({'error_code': 'attendance_attempt_blocked', 'error': attendance_attempt_blocked_message()}), 403
+        if attempt_status != "valid":
+            return jsonify({'error_code': 'attendance_attempt_expired', 'error': 'Покушај је истекао. Поново скенирајте QR код.'}), 403
 
     challenge = attendance_challenge_for_time(kind, event_id, event_date)
-    return jsonify({
+    geofence_state = attendance_geofence_state_for_event(kind, event_id, event_date, row=row)
+    payload = {
         'event': row,
         'challenge': challenge,
-    })
+        'attendance_geofence_available': geofence_state["available"],
+        'attendance_geofence_enabled': geofence_state["enabled"],
+        'attendance_geofence_warning': geofence_state["warning"],
+        'attendance_attempt_token': attendance_attempt_token,
+    }
+    if mobile_session:
+        payload['attendance_locations'] = geofence_state["locations"]
+    response = jsonify(payload)
+    return response
 
 
 
 @bp.route('/attendance/<kind>/<int:event_id>/<event_date>/data')
 def attendance_roster_data(kind, event_id, event_date):
     """Return teacher attendance data, including the current attendance list and QR token."""
-    attendance_cleanup_expired_failures()
+    attendance_cleanup_expired_attempt_failures()
     if not attendance_kind_valid(kind):
         abort(404)
 
@@ -900,12 +1069,16 @@ def attendance_roster_data(kind, event_id, event_date):
         return jsonify({'error': 'Forbidden'}), 403
 
     open_now = attendance_is_open_now(row)
+    geofence_state = attendance_geofence_state_for_event(kind, event_id, event_date, row=row)
 
     return jsonify({
         'event': row,
         'students': attendance_records_for_event(kind, event_id, event_date),
         'can_view': True,
         'attendance_open': open_now,
+        'attendance_geofence_available': geofence_state["available"],
+        'attendance_geofence_enabled': geofence_state["enabled"],
+        'attendance_geofence_warning': geofence_state["warning"],
         **(
             {
                 'challenge': attendance_challenge_for_time(kind, event_id, event_date),
@@ -914,6 +1087,40 @@ def attendance_roster_data(kind, event_id, event_date):
             if open_now
             else {}
         ),
+    })
+
+
+@bp.route('/attendance/<kind>/<int:event_id>/<event_date>/geofence', methods=['POST'])
+def attendance_geofence_update(kind, event_id, event_date):
+    """Persist the teacher geofence toggle for a single attendance attempt."""
+    if not attendance_kind_valid(kind):
+        abort(404)
+
+    row = attendance_event_row(kind, event_id, event_date)
+    if not row:
+        return jsonify({'error': 'event not found'}), 404
+    if not attendance_can_view(kind, row):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    geofence_state = attendance_geofence_state_for_event(kind, event_id, event_date, row=row)
+    if not geofence_state["available"]:
+        return jsonify({'error': 'Локација за ову учионицу није подешена.'}), 409
+
+    payload = request.get_json(silent=True) or {}
+    if "enabled" not in payload:
+        return jsonify({'error': 'enabled is required'}), 400
+
+    state = attendance_geofence_set_for_event(
+        kind,
+        event_id,
+        event_date,
+        bool(payload.get("enabled")),
+    )
+    return jsonify({
+        'success': True,
+        'attendance_geofence_available': state["available"],
+        'attendance_geofence_enabled': state["enabled"],
+        'attendance_geofence_warning': state["warning"],
     })
 
 
@@ -929,7 +1136,7 @@ def attendance_spot_check_data(kind, event_id, event_date):
     if not attendance_can_view(kind, row):
         return jsonify({'error': 'Forbidden'}), 403
     if not attendance_is_open_now(row):
-        return jsonify({'error': attendance_not_open_message()}), 403
+        return jsonify({'error_code': 'attendance_outside_class_time', 'error': attendance_not_open_message()}), 403
 
     limit = request.args.get('limit', '5').strip()
     try:
@@ -963,7 +1170,7 @@ def attendance_spot_check_submit(kind, event_id, event_date):
     if not attendance_can_view(kind, row):
         return jsonify({'error': 'Forbidden'}), 403
     if not attendance_is_open_now(row):
-        return jsonify({'error': attendance_not_open_message()}), 403
+        return jsonify({'error_code': 'attendance_outside_class_time', 'error': attendance_not_open_message()}), 403
 
     payload = request.get_json(silent=True) or {}
     selected_usernames = payload.get('selected_usernames') or []
@@ -991,7 +1198,7 @@ def attendance_join_submit(kind, event_id, event_date):
     if limited is not None:
         return limited
 
-    attendance_cleanup_expired_failures()
+    attendance_cleanup_expired_attempt_failures()
     if not attendance_kind_valid(kind):
         abort(404)
 
@@ -1001,36 +1208,46 @@ def attendance_join_submit(kind, event_id, event_date):
     if kind == 'weekly' and bool(row.get('is_canceled')):
         return jsonify({'error': 'this lecture occurrence is canceled'}), 409
     if not attendance_is_open_now(row):
-        return jsonify({'error': attendance_not_open_message()}), 403
+        return jsonify({'error_code': 'attendance_outside_class_time', 'error': attendance_not_open_message()}), 403
     data = request.get_json() or {}
     selected_code = data.get('selected_code')
     mobile_session = attendance_mobile_session_from_request()
+    geofence_state = attendance_geofence_state_for_event(kind, event_id, event_date, row=row)
+    latitude, longitude = attendance_optional_coordinates_from_payload(data)
     if mobile_session:
-        session_token = data.get('join_token', '').strip()
-        if not session_token:
-            return jsonify({'error': 'join token is required'}), 400
-        if not attendance_token_is_valid(kind, event_id, event_date, session_token):
-            return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
+        attempt_token = data.get('attendance_attempt_token', '').strip() or data.get('join_token', '').strip()
+        if not attempt_token:
+            return jsonify({'error_code': 'attendance_attempt_required', 'error': 'attendance attempt token is required'}), 400
+        if attendance_attempt_is_blocked_raw(attempt_token):
+            return jsonify({'error_code': 'attendance_attempt_blocked', 'error': attendance_attempt_blocked_message()}), 403
+        if not attendance_validate_attempt_token(kind, event_id, event_date, attempt_token):
+            return jsonify({'error_code': 'attendance_attempt_expired', 'error': 'Покушај је истекао. Поново скенирајте QR код.'}), 403
         username = mobile_session["user"]["radius_username"].strip()
         password = None
-        if ATTENDANCE_ALLOWED_LOCATIONS:
-            try:
-                latitude = float(data.get("latitude"))
-                longitude = float(data.get("longitude"))
-            except (TypeError, ValueError):
-                return jsonify({"error": "Потребна је локација уређаја."}), 403
-            allowed, closest = attendance_location_is_allowed(latitude, longitude)
+        geofence_checked = bool(geofence_state["available"] and geofence_state["enabled"])
+        if geofence_checked and not geofence_state["locations"]:
+            return jsonify({"error_code": "attendance_location_missing", "error": "Локација за ову учионицу није подешена."}), 403
+        if geofence_checked:
+            if latitude is None or longitude is None:
+                return jsonify({"error_code": "attendance_location_required", "error": "Потребна је локација уређаја."}), 403
+            allowed, closest = attendance_location_is_allowed_in_set(latitude, longitude, geofence_state["locations"])
             if not allowed:
-                return jsonify(attendance_geofence_rejection_payload(latitude, longitude, closest)), 403
+                attendance_attempt_block(attempt_token)
+                payload = attendance_geofence_rejection_payload(latitude, longitude, closest)
+                payload["error"] = "Локација није у дозвољеном опсегу. Покушај је закључан. Поново скенирајте QR код."
+                return jsonify(payload), 403
+        else:
+            geofence_checked = False
     else:
-        session_token = attendance_session_from_request(kind, event_id, event_date)
-        session_status = attendance_session_status(kind, event_id, event_date)
-        if session_status == "blocked":
-            return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
-        if session_status != "valid":
-            return jsonify({'error': 'Сесија је истекла. Поново скенирајте QR код.'}), 403
+        attempt_token = attendance_attempt_from_request(kind, event_id, event_date)
+        attempt_status = attendance_attempt_status(kind, event_id, event_date)
+        if attempt_status == "blocked":
+            return jsonify({'error_code': 'attendance_attempt_blocked', 'error': attendance_attempt_blocked_message()}), 403
+        if attempt_status != "valid":
+            return jsonify({'error_code': 'attendance_attempt_expired', 'error': 'Покушај је истекао. Поново скенирајте QR код.'}), 403
         username = data.get('username', '').strip()
         password = data.get('password', '')
+        geofence_checked = False
 
     if not username or (password is not None and not password):
         return jsonify({'error': 'username and password are required'}), 400
@@ -1038,19 +1255,19 @@ def attendance_join_submit(kind, event_id, event_date):
     try:
         selected_code = int(selected_code)
     except (TypeError, ValueError):
-        return jsonify({'error': 'selected code is required'}), 400
+        return jsonify({'error_code': 'attendance_selected_code_required', 'error': 'selected code is required'}), 400
 
     if not attendance_code_is_valid(kind, event_id, event_date, selected_code):
-        state = attendance_session_record_failure(session_token)
+        state = attendance_attempt_record_failure(attempt_token)
         if state and state["blocked"]:
-            return jsonify({'error': 'Морате поново да скенирате QR код.'}), 403
-        return jsonify({'error': 'Погрешан број. Сачекајте нови круг.'}), 409
+            return jsonify({'error_code': 'attendance_attempt_blocked', 'error': attendance_attempt_blocked_message()}), 403
+        return jsonify({'error_code': 'attendance_wrong_code', 'error': 'Погрешан број. Сачекајте нови круг.'}), 409
 
     if password is not None and not student_radius_auth(username, password):
         return jsonify({'error': 'Invalid credentials'}), 401
 
-    failure_state = attendance_session_failure_state_raw(session_token) or {}
-    attendance_session_clear_failures(session_token)
+    failure_state = attendance_attempt_failure_state_raw(attempt_token) or {}
+    attendance_attempt_clear_failures(attempt_token)
     registration_source = "android" if mobile_session else "web"
     attendance_record_student(
         kind,
@@ -1059,6 +1276,9 @@ def attendance_join_submit(kind, event_id, event_date):
         username,
         registration_source=registration_source,
         client_ip=attendance_client_ip(),
+        client_latitude=latitude,
+        client_longitude=longitude,
+        geofence_checked=geofence_checked,
         failed_attempts_before_success=int(failure_state.get("failed_attempts") or 0),
     )
     return jsonify({'success': True, 'username': username})

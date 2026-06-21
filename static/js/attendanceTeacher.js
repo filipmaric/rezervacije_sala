@@ -29,6 +29,24 @@ function formatAttendanceSource(student) {
     return source === 'android' ? 'android' : 'web';
 }
 
+function handleAttendanceError(err) {
+    const errorCode = err.data?.error_code || '';
+    const errorText = err.data?.error || err.message || '';
+    if (errorCode === 'attendance_outside_class_time') {
+        return { handled: true, type: 'outside_class', message: errorText };
+    }
+    if (errorCode === 'attendance_attempt_expired') {
+        return { handled: true, type: 'session_expired', message: errorText };
+    }
+    if (errorCode === 'attendance_attempt_blocked') {
+        return { handled: true, type: 'session_blocked', message: errorText };
+    }
+    if (errorCode === 'attendance_geofence_blocked' || errorCode === 'attendance_location_missing' || errorCode === 'attendance_location_required') {
+        return { handled: true, type: 'geofence', message: errorText };
+    }
+    return { handled: false, message: errorText };
+}
+
 function renderEventInfo(root, event) {
     const info = document.createElement('div');
     info.className = 'attendance-panel';
@@ -43,8 +61,8 @@ function renderEventInfo(root, event) {
     const details = document.createElement('p');
     const parts = [
         `Датум: ${formatDateDDMMYYYY(event.event_date || event.reservation_date)}`,
-        `Сала: ${event.room_name}`,
         `Време: ${String(event.start_slot).padStart(2, '0')}:00 - ${String(event.end_slot).padStart(2, '0')}:00`,
+        `Сала: ${event.room_name}`,
     ];
     if (event.teacher_name) parts.push(`Наставник: ${event.teacher_name}`);
     if (groups.length) parts.push(`Групе: ${groups.join(', ')}`);
@@ -95,6 +113,56 @@ function renderChallenge(root, challenge, event) {
     box.appendChild(countdown);
 }
 
+function renderGeofenceControl(root, data, kind, eventId, eventDate, pageRoot) {
+    const box = document.createElement('section');
+    box.className = 'attendance-panel attendance-geofence-panel';
+
+    if (!data.attendance_geofence_available) {
+        const warning = document.createElement('p');
+        warning.className = 'attendance-geofence-warning';
+        warning.textContent = data.attendance_geofence_warning || 'Локација за ову учионицу није подешена.';
+        box.appendChild(warning);
+        root.appendChild(box);
+        return;
+    }
+
+    const label = document.createElement('label');
+    label.className = 'attendance-geofence-toggle';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = Boolean(data.attendance_geofence_enabled);
+
+    const text = document.createElement('span');
+    text.textContent = 'Провери локацију';
+
+    const status = document.createElement('span');
+    status.className = `attendance-geofence-status ${
+        data.attendance_geofence_enabled ? 'attendance-geofence-status-on' : 'attendance-geofence-status-off'
+    }`;
+    status.textContent = data.attendance_geofence_enabled ? 'укључено' : 'искључено';
+
+    label.appendChild(checkbox);
+    label.appendChild(text);
+    box.appendChild(label);
+    box.appendChild(status);
+
+    checkbox.addEventListener('change', async () => {
+        checkbox.disabled = true;
+        try {
+            await API.setAttendanceGeofence(kind, eventId, eventDate, checkbox.checked);
+            await refresh(pageRoot);
+        } catch (error) {
+            checkbox.checked = !checkbox.checked;
+            window.alert(error.data?.error || error.message || 'Грешка при чувању провере локације.');
+        } finally {
+            checkbox.disabled = false;
+        }
+    });
+
+    root.appendChild(box);
+}
+
 function renderRoster(root, students) {
     const section = document.createElement('section');
     section.className = 'attendance-roster';
@@ -126,6 +194,32 @@ function renderRoster(root, students) {
     }
 
     root.appendChild(section);
+}
+
+function ensureTeacherLayout(root) {
+    let layout = root.querySelector('.attendance-teacher-layout');
+    if (layout) {
+        return {
+            layout,
+            left: layout.querySelector('.attendance-teacher-column-left'),
+            right: layout.querySelector('.attendance-teacher-column-right'),
+        };
+    }
+
+    layout = document.createElement('div');
+    layout.className = 'attendance-teacher-layout';
+
+    const left = document.createElement('div');
+    left.className = 'attendance-teacher-column attendance-teacher-column-left';
+
+    const right = document.createElement('div');
+    right.className = 'attendance-teacher-column attendance-teacher-column-right';
+
+    layout.appendChild(left);
+    layout.appendChild(right);
+    root.appendChild(layout);
+
+    return { layout, left, right };
 }
 
 function ensureSpotCheckDialog() {
@@ -297,7 +391,10 @@ async function refresh(root) {
     const data = await API.getAttendanceRoster(kind, eventId, eventDate);
     root.innerHTML = '';
 
-    renderEventInfo(root, data.event);
+    const { left, right } = ensureTeacherLayout(root);
+
+    renderEventInfo(left, data.event);
+    renderGeofenceControl(left, data, kind, eventId, eventDate, root);
 
     if (!data.attendance_open) {
         showAccessMessage(root, 'Пријава присуства је могућа само током часа.');
@@ -305,9 +402,9 @@ async function refresh(root) {
     }
 
     const joinUrl = buildJoinUrl(kind, eventId, eventDate, data.join_token);
-    renderQr(root, joinUrl);
-    renderChallenge(root, data.challenge, data.event);
-    renderRoster(root, data.students || []);
+    renderQr(left, joinUrl);
+    renderChallenge(left, data.challenge, data.event);
+    renderRoster(right, data.students || []);
 
     if (data.students && data.students.length) {
         const actions = document.createElement('div');
@@ -329,13 +426,9 @@ async function refresh(root) {
             }
         });
         actions.appendChild(button);
-        root.appendChild(actions);
+        right.appendChild(actions);
     }
 
-    const note = document.createElement('p');
-    note.className = 'attendance-note';
-    note.textContent = 'Листа се аутоматски освежава.';
-    root.appendChild(note);
 }
 
 const App = {
@@ -344,15 +437,15 @@ const App = {
         try {
             await refresh(root);
             pollHandle = setInterval(() => refresh(root).catch((err) => {
-                const errorText = err.data?.error || err.message || '';
-                if (err.status === 403 && errorText.includes('само током часа')) {
-                    showAccessMessage(root, errorText);
+                const result = handleAttendanceError(err);
+                if (err.status === 403 && result.handled && result.type === 'outside_class') {
+                    showAccessMessage(root, result.message);
                 }
-            }), 1000);
+            }), 2000);
         } catch (err) {
-            const errorText = err.data?.error || err.message || '';
-            if (err.status === 403 && errorText.includes('само током часа')) {
-                showAccessMessage(root, errorText);
+            const result = handleAttendanceError(err);
+            if (err.status === 403 && result.handled && result.type === 'outside_class') {
+                showAccessMessage(root, result.message);
                 return;
             }
             root.innerHTML = '';

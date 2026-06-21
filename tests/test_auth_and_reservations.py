@@ -224,6 +224,7 @@ def test_attendance_join_and_roster(client, db, monkeypatch):
         start="2026-01-01",
         end="2026-12-31",
     )
+    db.building_location("A", 10.0, 20.0, radius_m=100)
     room = db.room("R1")
     teacher = db.teacher("Prof", "alice")
     course = db.course("NumericalMethods")
@@ -254,6 +255,8 @@ def test_attendance_join_and_roster(client, db, monkeypatch):
     assert challenge_data["event"]["course_name"] == "NumericalMethods"
     assert isinstance(challenge_data["challenge"]["current_code"], int)
     assert len(challenge_data["challenge"]["options"]) == 4
+    assert challenge_data["attendance_geofence_available"] is True
+    assert challenge_data["attendance_geofence_enabled"] is True
 
     bucket = int(time.time() // cfg.ATTENDANCE_CHALLENGE_TTL)
     code = myapp.attendance_code_for_bucket("weekly", weekly_session_id, "2026-03-09", bucket)
@@ -274,6 +277,8 @@ def test_attendance_join_and_roster(client, db, monkeypatch):
     assert roster_after.status_code == 200
     roster_after_data = roster_after.get_json()
     assert roster_after_data["event"]["course_name"] == "NumericalMethods"
+    assert roster_after_data["attendance_geofence_available"] is True
+    assert roster_after_data["attendance_geofence_enabled"] is True
     assert [student["username"] for student in roster_after_data["students"]] == ["student1"]
     assert roster_after_data["students"][0]["student_index"] == "1140/2025"
     assert roster_after_data["students"][0]["student_name"] == "Fritz Ali Agildere"
@@ -358,18 +363,17 @@ def test_attendance_spot_check_shortlist_and_flags_unconfirmed(client, db, monke
 
     flagged = myapp.query_db(
         """
-        SELECT username, spot_check_teacher_username, spot_check_flagged, spot_check_flagged_at
-        FROM attendance_records
-        WHERE event_kind = ? AND event_id = ? AND event_date = ?
-          AND spot_check_flagged = 1
+        SELECT ar.username, f.teacher_username, f.flagged_at
+        FROM attendance_records ar
+        JOIN attendance_spot_check_flags f ON f.attendance_record_id = ar.id
+        WHERE ar.event_kind = ? AND ar.event_id = ? AND ar.event_date = ?
         """,
         ("weekly", weekly_session_id, "2026-03-09"),
     )
     assert len(flagged) == 1
     assert flagged[0]["username"] == "web_one"
-    assert flagged[0]["spot_check_teacher_username"] == "alice"
-    assert int(flagged[0]["spot_check_flagged"]) == 1
-    assert flagged[0]["spot_check_flagged_at"] is not None
+    assert flagged[0]["teacher_username"] == "alice"
+    assert flagged[0]["flagged_at"] is not None
 
 
 def test_attendance_roster_uses_unknown_fallback(client, db):
@@ -554,14 +558,14 @@ def test_attendance_join_blocks_after_two_wrong_numbers(client, db, monkeypatch)
         },
     )
     assert second.status_code == 403
-    assert second.get_json()["error"] == "Морате поново да скенирате QR код."
+    assert "Превише погрешних покушаја" in second.get_json()["error"]
 
     challenge = client.get(f"/attendance/weekly/{weekly_session_id}/2026-03-09/challenge")
     assert challenge.status_code == 403
-    assert challenge.get_json()["error"] == "Морате поново да скенирате QR код."
+    assert "Превише погрешних покушаја" in challenge.get_json()["error"]
 
 
-def test_attendance_session_expired_is_reported_separately(client, db, monkeypatch):
+def test_attendance_attempt_expired_is_reported_separately(client, db, monkeypatch):
     monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
     schedule = db.schedule()
     room = schedule.room("R1")
@@ -577,14 +581,14 @@ def test_attendance_session_expired_is_reported_separately(client, db, monkeypat
     )
 
     expired_now = myapp.datetime.datetime.now() - myapp.datetime.timedelta(
-        seconds=cfg.ATTENDANCE_SESSION_TTL + 1
+        seconds=cfg.ATTENDANCE_ATTEMPT_TTL + 1
     )
-    cookie_name = myapp.attendance_session_cookie_name(
+    cookie_name = myapp.attendance_attempt_cookie_name(
         "weekly",
         weekly_session_id,
         "2026-03-09",
     )
-    expired_token = myapp.attendance_create_session_token(
+    expired_token = myapp.attendance_create_attempt_token(
         "weekly",
         weekly_session_id,
         "2026-03-09",
@@ -596,10 +600,10 @@ def test_attendance_session_expired_is_reported_separately(client, db, monkeypat
         headers={"Cookie": f"{cookie_name}={expired_token}"},
     )
     assert challenge.status_code == 403
-    assert challenge.get_json()["error"] == "Сесија је истекла. Поново скенирајте QR код."
+    assert challenge.get_json()["error"] == "Покушај је истекао. Поново скенирајте QR код."
 
 
-def test_expired_attendance_session_clears_failure_rows(client, db, monkeypatch):
+def test_expired_attendance_attempt_clears_failure_rows(client, db, monkeypatch):
     monkeypatch.setattr(attendancemod, "attendance_is_open_now", lambda row, now=None: True)
     schedule = db.schedule()
     room = schedule.room("R1")
@@ -615,14 +619,14 @@ def test_expired_attendance_session_clears_failure_rows(client, db, monkeypatch)
     )
 
     expired_now = myapp.datetime.datetime.now() - myapp.datetime.timedelta(
-        seconds=cfg.ATTENDANCE_SESSION_TTL + 1
+        seconds=cfg.ATTENDANCE_ATTEMPT_TTL + 1
     )
-    cookie_name = myapp.attendance_session_cookie_name(
+    cookie_name = myapp.attendance_attempt_cookie_name(
         "weekly",
         weekly_session_id,
         "2026-03-09",
     )
-    expired_token = myapp.attendance_create_session_token(
+    expired_token = myapp.attendance_create_attempt_token(
         "weekly",
         weekly_session_id,
         "2026-03-09",
@@ -631,17 +635,17 @@ def test_expired_attendance_session_clears_failure_rows(client, db, monkeypatch)
 
     myapp.execute_db(
         """
-        INSERT INTO attendance_session_failures
-            (session_token, failed_attempts, blocked)
+        INSERT INTO attendance_attempt_failures
+            (attempt_token, failed_attempts, blocked)
         VALUES (?, 1, 0)
         """,
         (expired_token,),
     )
     assert myapp.query_db(
         """
-        SELECT session_token
-        FROM attendance_session_failures
-        WHERE session_token = ?
+        SELECT attempt_token
+        FROM attendance_attempt_failures
+        WHERE attempt_token = ?
         """,
         (expired_token,),
         one=True,
@@ -653,12 +657,12 @@ def test_expired_attendance_session_clears_failure_rows(client, db, monkeypatch)
         f"/attendance/weekly/{weekly_session_id}/2026-03-09/challenge",
     )
     assert challenge.status_code == 403
-    assert challenge.get_json()["error"] == "Сесија је истекла. Поново скенирајте QR код."
+    assert challenge.get_json()["error"] == "Покушај је истекао. Поново скенирајте QR код."
     assert myapp.query_db(
         """
-        SELECT session_token
-        FROM attendance_session_failures
-        WHERE session_token = ?
+        SELECT attempt_token
+        FROM attendance_attempt_failures
+        WHERE attempt_token = ?
         """,
         (expired_token,),
         one=True,

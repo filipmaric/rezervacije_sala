@@ -90,6 +90,15 @@ export const API = {
         });
         return handleResponse(res, "Грешка при учитавању листе присутних");
     },
+    async setAttendanceGeofence(kind, eventId, eventDate, enabled) {
+        const res = await fetch(getUrl(`/attendance/${kind}/${eventId}/${eventDate}/geofence`), {
+            method: "POST",
+            headers: withCsrfHeaders({ "Content-Type": "application/json" }),
+            credentials: "same-origin",
+            body: JSON.stringify({ enabled }),
+        });
+        return handleResponse(res, "Грешка при чувању провере локације");
+    },
     async getAttendanceSpotCheck(kind, eventId, eventDate, limit = 5) {
         const res = await fetch(getUrl(`/attendance/${kind}/${eventId}/${eventDate}/spot_check?limit=${encodeURIComponent(limit)}`), {
             credentials: "same-origin",

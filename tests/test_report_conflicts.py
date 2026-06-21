@@ -18,14 +18,14 @@ def init_conflict_db(db_path):
 
         conn.execute(
             """
-            INSERT INTO rooms (name, capacity, type, location, code, priority)
+            INSERT INTO rooms (name, capacity, type, building_name, code, priority)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             ("Room 406", 50, "lecture", "A", "406", 1),
         )
         conn.execute(
             """
-            INSERT INTO rooms (name, capacity, type, location, code, priority)
+            INSERT INTO rooms (name, capacity, type, building_name, code, priority)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             ("Room 407", 50, "lecture", "A", "407", 2),
@@ -120,7 +120,7 @@ def test_report_conflicts_clean_db_exits_zero(tmp_path):
             conn.executescript(f.read())
         conn.execute(
             """
-            INSERT INTO rooms (name, capacity, type, location, code, priority)
+            INSERT INTO rooms (name, capacity, type, building_name, code, priority)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             ("Room 406", 50, "lecture", "A", "406", 1),

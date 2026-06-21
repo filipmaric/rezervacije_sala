@@ -1,4 +1,4 @@
-"""Android app authentication endpoints backed by student RADIUS sessions."""
+"""Mobile API endpoints backed by student RADIUS sessions."""
 
 import secrets
 from datetime import datetime, timezone
@@ -7,7 +7,6 @@ from functools import wraps
 from flask import Blueprint, current_app, g, jsonify, request
 
 from auth import RATE_LIMITS, enforce_rate_limit, student_radius_auth
-from config import ATTENDANCE_ALLOWED_LOCATIONS
 from db import (
     hash_token,
     mobile_auth_assert_device_login_allowed,
@@ -45,12 +44,12 @@ def _session_is_active(session):
 
 
 def _user_payload(user):
-    """Serialize a mobile auth user row for the JSON API."""
+    """Serialize a mobile API user row for the JSON API."""
     return {"id": user["id"], "radius_username": user["radius_username"]}
 
 
 def _session_payload(session, include_last_seen=False):
-    """Serialize a mobile auth session row for the JSON API."""
+    """Serialize a mobile API session row for the JSON API."""
     payload = {
         "id": session["id"],
         "device_id": session["device_id"],
@@ -62,13 +61,8 @@ def _session_payload(session, include_last_seen=False):
     return payload
 
 
-def _attendance_locations_payload():
-    """Serialize the fixed Android QR geofences for the mobile client."""
-    return ATTENDANCE_ALLOWED_LOCATIONS
-
-
 def require_mobile_session(fn):
-    """Require a valid Android bearer token for the wrapped route."""
+    """Require a valid mobile bearer token for the wrapped route."""
     @wraps(fn)
     def wrapper(*args, **kwargs):
         auth_header = request.headers.get("Authorization", "")
@@ -86,13 +80,13 @@ def require_mobile_session(fn):
     return wrapper
 
 
-@bp.route("/healthz", methods=["GET"])
+@bp.route("/mobile/healthz", methods=["GET"])
 def healthz():
-    """Expose a lightweight health check for the Android backend."""
+    """Expose a lightweight health check for the mobile backend."""
     return jsonify({"ok": True})
 
 
-@bp.route("/auth/login", methods=["POST"])
+@bp.route("/mobile/login", methods=["POST"])
 def login():
     """Authenticate a student and create an opaque bearer session."""
     limited = enforce_rate_limit("login", *RATE_LIMITS["login"])
@@ -103,7 +97,7 @@ def login():
     username = str(payload.get("username", "")).strip()
     password = str(payload.get("password", ""))
     device_id = str(payload.get("device_id", "")).strip()
-    device_name = str(payload.get("device_name", "Android phone")).strip()
+    device_name = str(payload.get("device_name", "Mobile device")).strip()
 
     if not username or not password or not device_id:
         return jsonify({"error": "username_password_and_device_id_required"}), 400
@@ -145,10 +139,10 @@ def login():
     )
 
 
-@bp.route("/auth/me", methods=["GET"])
+@bp.route("/mobile/me", methods=["GET"])
 @require_mobile_session
 def me():
-    """Return the current authenticated Android session."""
+    """Return the current authenticated mobile session."""
     session = g.mobile_auth_session
     user = mobile_auth_get_user_by_id(session["user_id"])
     return jsonify(
@@ -159,16 +153,16 @@ def me():
     )
 
 
-@bp.route("/auth/logout", methods=["POST"])
+@bp.route("/mobile/logout", methods=["POST"])
 @require_mobile_session
 def logout():
-    """Revoke the current Android bearer token."""
+    """Revoke the current mobile bearer token."""
     session = g.mobile_auth_session
     mobile_auth_revoke_session(session["id"], reason="logged_out")
     return jsonify({"ok": True})
 
 
-@bp.route("/auth/sessions", methods=["GET"])
+@bp.route("/mobile/sessions", methods=["GET"])
 @require_mobile_session
 def sessions():
     """Expose the current session id for clients that need to confirm login state."""
@@ -181,9 +175,3 @@ def sessions():
         }
     )
 
-
-@bp.route("/attendance/locations", methods=["GET"])
-@require_mobile_session
-def attendance_locations():
-    """Return the fixed geofences used by the Android QR scanner."""
-    return jsonify({"attendance_locations": _attendance_locations_payload()})

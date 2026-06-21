@@ -90,28 +90,18 @@ STATIC_URL_PATH = os.getenv("STATIC_URL_PATH", "/static")
 APPLICATION_ROOT = os.getenv("APPLICATION_ROOT", "/")
 # Path to the application log file.
 LOG_FILE = os.getenv("APP_LOG_FILE", os.path.join(BASE_DIR, "app.log"))
-# Secret used to sign attendance QR/session tokens.
+# Secret used to sign attendance QR/attempt tokens.
 ATTENDANCE_SECRET = load_secret_env("ATTENDANCE_SECRET", "attendance-secret")
 # How many seconds one QR token stays valid before it rotates.
 ATTENDANCE_JOIN_TOKEN_TTL = int(os.getenv("ATTENDANCE_JOIN_TOKEN_TTL", "8"))
 # How many seconds one challenge number stays visible before it changes.
 ATTENDANCE_CHALLENGE_TTL = int(os.getenv("ATTENDANCE_CHALLENGE_TTL", "10"))
-# How many seconds the student attendance form stays valid after scanning the QR code.
-ATTENDANCE_SESSION_TTL = int(os.getenv("ATTENDANCE_SESSION_TTL", "90"))
+# How many seconds the student attendance attempt stays valid after scanning the QR code.
+ATTENDANCE_ATTEMPT_TTL = int(os.getenv("ATTENDANCE_ATTEMPT_TTL", "90"))
 # How many older challenge rounds are still accepted as a grace window.
 ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS = int(os.getenv("ATTENDANCE_PREVIOUS_CHALLENGE_ROUNDS", "2"))
 # How many minutes before and after class attendance is allowed.
-ATTENDANCE_CLASS_GRACE_MINUTES = int(os.getenv("ATTENDANCE_CLASS_GRACE_MINUTES", "15"))
-# Fixed geofences where Android QR scanning is allowed.
-ATTENDANCE_ALLOWED_LOCATIONS = load_json_env(
-    "ATTENDANCE_ALLOWED_LOCATIONS",
-    [
-        {"name": "MATF 1", "latitude": 44.8200177330261, "longitude": 20.45871822883615, "radius_m": 100},
-        {"name": "MATF 2", "latitude": 44.803735279889494, "longitude": 20.495233662987637, "radius_m": 100},
-        {"name": "MATF 3", "latitude": 44.80004520753084, "longitude": 20.48487938340236, "radius_m": 100},
-        {"name": "MATF 4", "latitude": 44.81436248315949, "longitude": 20.431317725207304, "radius_m": 100},
-    ],
-)
+ATTENDANCE_CLASS_GRACE_MINUTES = int(os.getenv("ATTENDANCE_CLASS_GRACE_MINUTES", "150"))
 # How many days an Android app session remains valid.
 MOBILE_AUTH_SESSION_DAYS = int(os.getenv("MOBILE_AUTH_SESSION_DAYS", "30"))
 # Teacher login mode: "mock" for local development or "radius" in production.

@@ -30,14 +30,14 @@ def init_timetable_db(db_path, target_day=None):
 
         conn.execute(
             """
-            INSERT INTO rooms (name, capacity, type, location, code, priority)
+            INSERT INTO rooms (name, capacity, type, building_name, code, priority)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             ("Room 406", 50, "lecture", "A", "406", 1),
         )
         conn.execute(
             """
-            INSERT INTO rooms (name, capacity, type, location, code, priority)
+            INSERT INTO rooms (name, capacity, type, building_name, code, priority)
             VALUES (?, ?, ?, ?, ?, ?)
             """,
             ("Room 407", 50, "lecture", "A", "407", 2),

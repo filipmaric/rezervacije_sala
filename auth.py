@@ -82,7 +82,7 @@ def enforce_csrf():
     if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
 
-    if request.path.startswith("/auth/"):
+    if request.path.startswith("/auth/") or request.path.startswith("/mobile/"):
         return None
 
     auth = request.headers.get("Authorization", "")

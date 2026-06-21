@@ -4,7 +4,6 @@
 
 import argparse
 import csv
-from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 import sys
@@ -12,12 +11,6 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import db as mydb
-
-
-def iso_now():
-    """Return the current UTC timestamp in ISO format."""
-    return datetime.now(timezone.utc).isoformat()
-
 
 def normalize_text(value):
     """Trim surrounding whitespace and collapse empty values to an empty string."""
@@ -88,26 +81,22 @@ def main(argv=None):
         mydb.ensure_student_directory_schema(conn)
         with conn:
             cur = conn.cursor()
-            now = iso_now()
             for student in students:
                 cur.execute(
                     """
                     INSERT INTO students (
-                        username, student_index, surname, given_name, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?)
+                        username, student_index, surname, given_name
+                    ) VALUES (?, ?, ?, ?)
                     ON CONFLICT(username) DO UPDATE SET
                         student_index = excluded.student_index,
                         surname = excluded.surname,
-                        given_name = excluded.given_name,
-                        updated_at = excluded.updated_at
+                        given_name = excluded.given_name
                     """,
                     (
                         student["username"],
                         student["student_index"],
                         student["surname"],
                         student["given_name"],
-                        now,
-                        now,
                     ),
                 )
         print(f"Imported {len(students)} students into {args.database}")

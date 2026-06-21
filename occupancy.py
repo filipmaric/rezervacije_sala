@@ -17,7 +17,7 @@ bp = Blueprint("occupancy", __name__)
 @bp.route("/rooms")
 def list_rooms():
     """Return the rooms list, optionally filtered by room type."""
-    query = "SELECT id, name, capacity, type, location, priority FROM rooms"
+    query = "SELECT id, name, capacity, type, building_name AS location, priority FROM rooms"
     params = ()
 
     room_type = request.args.get("type")
