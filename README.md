@@ -202,7 +202,7 @@ The script exits with status `1` if conflicts are found and `0` otherwise.
 
 ## Notes
 
-- The app creates `app.db` automatically if it is missing, but `python app.py init-db` is the explicit setup path.
+- Use `python app.py init-db` to create a fresh `app.db` from `schema.sql`.
 - Local development uses mock teacher authentication unless `TEACHER_AUTH_BACKEND=radius` is set.
 - Run the test suite with:
 
