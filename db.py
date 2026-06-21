@@ -6,7 +6,7 @@ import sqlite3
 import sys
 from datetime import datetime, timedelta, timezone
 
-from flask import g
+from flask import g, has_app_context
 
 import config
 
@@ -364,14 +364,20 @@ def get_db():
     """Return the current SQLite connection, creating one for this request if needed."""
     db = getattr(g, "_database", None)
     if db is None:
-        db = g._database = sqlite3.connect(_database_path(), detect_types=sqlite3.PARSE_DECLTYPES)
-        db.row_factory = sqlite3.Row
-        # enable WAL mode for concurrent access (Gunicorn)
-        db.execute("PRAGMA journal_mode=WAL;")
-        # ensure foreign keys are enforced
-        db.execute("PRAGMA foreign_keys = ON;")
-        init_db(db)
-        _ensure_extra_schemas(db)
+        db = g._database = _open_db_connection()
+    return db
+
+
+def _open_db_connection():
+    """Open a SQLite connection and ensure the current schema exists."""
+    db = sqlite3.connect(_database_path(), detect_types=sqlite3.PARSE_DECLTYPES)
+    db.row_factory = sqlite3.Row
+    # enable WAL mode for concurrent access (Gunicorn)
+    db.execute("PRAGMA journal_mode=WAL;")
+    # ensure foreign keys are enforced
+    db.execute("PRAGMA foreign_keys = ON;")
+    init_db(db)
+    _ensure_extra_schemas(db)
     return db
 
 
@@ -384,19 +390,39 @@ def close_connection(exception):
 
 def query_db(query, args=(), one=False):
     """Run a SELECT query and return either one row or all rows."""
-    cur = get_db().execute(query, args)
-    rv = cur.fetchall()
-    cur.close()
-    return (rv[0] if rv else None) if one else rv
+    if has_app_context():
+        cur = get_db().execute(query, args)
+        rv = cur.fetchall()
+        cur.close()
+        return (rv[0] if rv else None) if one else rv
+
+    conn = _open_db_connection()
+    try:
+        cur = conn.execute(query, args)
+        rv = cur.fetchall()
+        cur.close()
+        return (rv[0] if rv else None) if one else rv
+    finally:
+        conn.close()
 
 
 def execute_db(query, args=(), commit=True):
     """Run a write query and optionally commit it immediately."""
-    conn = get_db()
-    cur = conn.execute(query, args)
-    if commit:
-        conn.commit()
-    return cur.lastrowid
+    if has_app_context():
+        conn = get_db()
+        cur = conn.execute(query, args)
+        if commit:
+            conn.commit()
+        return cur.lastrowid
+
+    conn = _open_db_connection()
+    try:
+        cur = conn.execute(query, args)
+        if commit:
+            conn.commit()
+        return cur.lastrowid
+    finally:
+        conn.close()
 
 
 def mobile_auth_get_or_create_user(radius_username):
